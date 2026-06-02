@@ -4,13 +4,34 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 type Lang = "en" | "fr";
 type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
 type User = { fullName: string; email: string; language: Lang; plan: string; isAdmin?: boolean };
-type Goal = { id: string; text: string; done: boolean };
+type Goal = { id: string; text: string; done: boolean; kind?: string; content?: string; durationSeconds?: number };
 type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
+type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
+type PrayerItem = { id?: string; title: string; body: string; icon: string; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
 
 const id = () => Math.random().toString(36).slice(2, 10);
+const API_URL = "https://revivespring.onrender.com/api";
+async function api<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers,
+  });
+  const data = response.status === 204 ? null : await response.json();
+  if (!response.ok) throw new Error(data?.message || "Request failed.");
+  return data as T;
+}
+function mapUser(raw: any): User {
+  return { fullName: raw.fullName || raw.full_name || "Friend", email: raw.email, language: raw.language || "en", plan: raw.subscriptionStatus || raw.plan || "free", isAdmin: raw.role === "admin" };
+}
+function mapGoal(raw: any): Goal {
+  return { id: raw.id, text: raw.text, done: raw.completed === true, kind: raw.kind, content: raw.content, durationSeconds: raw.duration_seconds || 10 };
+}
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
 const NAV_ITEMS: { id: AppTab; label: string; icon: string }[] = [
   { id: "home", label: "Home", icon: "⌂" },
@@ -27,7 +48,7 @@ const PRAYER_LIBRARY = [
   { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: "+", tone: "green" },
   { title: "Family", body: "Cover the people I love with unity and grace.", icon: "♡", tone: "coral" },
 ];
-const MOODS = ["Anxious", "Financial stress", "Sad", "Confused", "Grateful", "Healing", "Need a job", "Protection", "Need peace"];
+const MOODS = ["Anxious", "Financial stress", "Sad", "Confused", "Grateful", "Healing", "Need a job", "Protection", "Need peace", "Lonely", "Overwhelmed", "Tired", "Hopeful", "Joyful", "Tempted", "Discouraged", "Seeking wisdom", "Family concern"];
 const ONBOARDING: Slide[] = [
   { id: "story", kind: "info", title: "This is what's possible when Scripture meets real life", body: "Stories from people finding joy, purpose, and direction with daily guidance." },
   { id: "unique", kind: "info", title: "Every journey of faith is unique", body: "We'll help you create a path that fits your life, not someone else's." },
@@ -69,6 +90,7 @@ function useStore<T>(key: string, initial: T) {
 export default function App() {
   const [language, setLanguage] = useStore<Lang | null>("rs_language", null);
   const [user, setUser] = useStore<User | null>("rs_user", null);
+  const [token, setToken] = useStore<string | null>("rs_token", null);
   const [onboarded, setOnboarded] = useStore("rs_onboarded", false);
   const setupPath = !language ? "/language" : !user ? "/auth" : !onboarded ? "/onboarding" : "/app";
   return (
@@ -76,10 +98,10 @@ export default function App() {
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
       <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
-      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser) => { setUser(nextUser); setOnboarded(true); }} />} />
-      <Route path="/verify" element={<VerifyPage onVerified={setUser} />} />
-      <Route path="/onboarding" element={user ? <OnboardingPage onComplete={() => setOnboarded(true)} /> : <Navigate to="/auth" replace />} />
-      <Route path="/app" element={user && onboarded ? <MainApp user={user} setUser={setUser} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
+      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(true); }} />} />
+      <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); }} />} />
+      <Route path="/onboarding" element={user && token ? <OnboardingPage language={language ?? "en"} token={token} onComplete={() => setOnboarded(true)} /> : <Navigate to="/auth" replace />} />
+      <Route path="/app" element={user && token && onboarded ? <MainApp user={user} token={token} signOut={() => { setUser(null); setToken(null); }} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -121,37 +143,48 @@ function LanguagePage({ current, onSelect }: { current: Lang | null; onSelect: (
   </PublicShell>;
 }
 
-function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User) => void }) {
+function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User, token: string) => void }) {
   const [signup, setSignup] = useState(false);
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
-  const submit = (e: FormEvent) => {
-    e.preventDefault(); const next = { fullName: name.trim() || "Friend", email, language, plan: "Free", isAdmin: email.toLowerCase().includes("admin") };
-    if (signup) { sessionStorage.setItem("rs_pending_user", JSON.stringify(next)); navigate("/verify"); }
-    else { onLogin(next); navigate("/app"); }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault(); setBusy(true); setError("");
+    try {
+      if (signup) {
+        await api("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name: name.trim() }) });
+        sessionStorage.setItem("rs_pending_email", email); navigate("/verify");
+      } else {
+        const data = await api<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+        onLogin(mapUser(data.user), data.token); navigate("/app");
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to continue."); }
+    finally { setBusy(false); }
   };
   return <PublicShell><div className="auth-card">
     <Brand /><p className="kicker">Welcome to your quiet space</p><h1>{signup ? "Create your account" : "Welcome back"}</h1>
     <p className="lead">{signup ? "Start a daily rhythm shaped around your faith." : "Continue your prayer and reflection journey."}</p>
     <div className="segmented"><button className={!signup ? "active" : ""} onClick={() => setSignup(false)}>Sign in</button><button className={signup ? "active" : ""} onClick={() => setSignup(true)}>Sign up</button></div>
     <form onSubmit={submit} className="form-stack">
+      {error && <p className="form-error">{error}</p>}
       {signup && <Field label="Full name" value={name} onChange={setName} placeholder="Your full name" />}
       <Field label="Email address" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
       <Field label="Password" value={password} onChange={setPassword} placeholder="At least 6 characters" type="password" />
-      <button className="button primary full" disabled={email.length < 5 || password.length < 6 || (signup && !name.trim())}>{signup ? "Create account" : "Sign in"} <span>→</span></button>
+      <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? "Please wait..." : signup ? "Create account" : "Sign in"} <span>→</span></button>
     </form>
     <button className="link-button" onClick={() => setSignup(!signup)}>{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
   </div></PublicShell>;
 }
 
-function VerifyPage({ onVerified }: { onVerified: (user: User) => void }) {
-  const [code, setCode] = useState(""); const navigate = useNavigate();
-  const pending = sessionStorage.getItem("rs_pending_user");
+function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) => void }) {
+  const [code, setCode] = useState(""); const [error, setError] = useState(""); const navigate = useNavigate();
+  const pending = sessionStorage.getItem("rs_pending_email");
   if (!pending) return <Navigate to="/auth" replace />;
   return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">✉</div><p className="kicker">One last step</p><h1>Verify your email</h1>
     <p className="lead">Enter the 6-digit code sent to your inbox. For this preview, any six digits will work.</p>
     <Field label="Verification code" value={code} onChange={setCode} placeholder="000000" />
-    <button className="button primary full" disabled={code.length !== 6} onClick={() => { onVerified(JSON.parse(pending) as User); sessionStorage.removeItem("rs_pending_user"); navigate("/onboarding"); }}>Verify and continue <span>→</span></button>
+    {error && <p className="form-error">{error}</p>}
+    <button className="button primary full" disabled={code.length !== 6} onClick={async () => { try { const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); onVerified(mapUser(data.user), data.token); sessionStorage.removeItem("rs_pending_email"); navigate("/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } }}>Verify and continue <span>→</span></button>
   </div></PublicShell>;
 }
 
@@ -159,7 +192,7 @@ function PublicShell({ children }: { children: React.ReactNode }) {
   return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">Revive your spirit. Renew your day.</p><h2>A calmer place to pray, reflect, and grow with purpose.</h2><p>Daily guidance meets real life, one faithful step at a time.</p></div><div className="aside-verse"><span>Daily reflection</span><q>Trust in the Lord with all your heart.</q><b>Proverbs 3:5</b></div></div><div className="public-main">{children}</div></main>;
 }
 
-function OnboardingPage({ onComplete }: { onComplete: () => void }) {
+function OnboardingPage({ language, token, onComplete }: { language:Lang; token: string; onComplete: () => void }) {
   const [index, setIndex] = useState(0); const [answers, setAnswers] = useState<Record<string, string[]>>({}); const [committed, setCommitted] = useState(false); const navigate = useNavigate();
   const slide = ONBOARDING[index], selected = answers[slide.id] || [];
   const needsAnswer = ["choice", "multi", "statement", "builder"].includes(slide.kind);
@@ -168,7 +201,7 @@ function OnboardingPage({ onComplete }: { onComplete: () => void }) {
   return <main className="onboarding-shell">
     <header className="onboarding-header"><Brand compact /><div className="onboarding-progress"><div><span>About you</span><b>{index + 1} / {ONBOARDING.length}</b></div><div className="progress"><i style={{ width: `${((index + 1) / ONBOARDING.length) * 100}%` }} /></div></div><button className="icon-button" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0} title="Previous step">←</button></header>
     <section className="onboarding-content"><p className="kicker">Your personal path</p><h1>{slide.title}</h1>{slide.body && <p className="onboarding-lead">{slide.body}</p>}<SlideContent slide={slide} selected={selected} select={select} committed={committed} setCommitted={setCommitted} /></section>
-    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0}>Back</button><button className="button primary" disabled={!canContinue} onClick={() => { if (index === ONBOARDING.length - 1) { onComplete(); navigate("/app"); } else setIndex(index + 1); }}>{index === ONBOARDING.length - 1 ? "Enter ReviveSpring" : "Continue"} <span>→</span></button></footer>
+    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0}>Back</button><button className="button primary" disabled={!canContinue} onClick={async () => { if (index === ONBOARDING.length - 1) { await api("/onboarding/save", { method:"POST", body:JSON.stringify({ language, answers, committed, completedAt:new Date().toISOString() }) }, token); onComplete(); navigate("/app"); } else setIndex(index + 1); }}>{index === ONBOARDING.length - 1 ? "Enter ReviveSpring" : "Continue"} <span>→</span></button></footer>
   </main>;
 }
 
@@ -185,58 +218,73 @@ function OptionGrid({ options, selected, select, multi }: { options: string[]; s
   return <div className="option-grid">{options.map(option => <button key={option} className={selected.includes(option) ? "selected" : ""} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "✓" : multi ? "□" : "○"}</i></button>)}</div>;
 }
 
-function MainApp({ user, setUser, language }: { user: User; setUser: (user: User | null) => void; language: Lang }) {
+function MainApp({ user, token, signOut, language }: { user: User; token: string; signOut: () => void; language: Lang }) {
   const [tab, setTab] = useState<AppTab>("home");
-  const [goals, setGoals] = useStore<Goal[]>("rs_goals", [{ id: id(), text: "Pray for family", done: true }, { id: id(), text: "Read Psalm 23", done: false }, { id: id(), text: "Write one gratitude note", done: false }]);
-  const [journal, setJournal] = useStore<JournalEntry[]>("rs_journal", [{ id: id(), body: "Thankful for peace this morning.", date: "Today" }, { id: id(), body: "Praying for wisdom and courage.", date: "Yesterday" }]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [analytics, setAnalytics] = useState<Analytics>({ totalPrayers:0, visitCount:0, currentStreak:0, answeredPrayers:5, completedGoals:0 });
+  const [verse, setVerse] = useState({ verse:"I can do all things through Christ who strengthens me.", reference:"Philippians 4:13" });
+  const [library, setLibrary] = useState<PrayerItem[]>(PRAYER_LIBRARY);
+  const refresh = async () => {
+    const [goalData, journalData, analyticsData, verseData, libraryData] = await Promise.all([
+      api<any[]>("/goals", {}, token), api<any[]>("/journal", {}, token), api<Analytics>("/analytics", {}, token),
+      api<any>("/daily-verse", {}, token).catch(() => verse), api<any[]>("/library", {}, token).catch(() => []),
+    ]);
+    setGoals(goalData.map(mapGoal)); setJournal(journalData.map(item => ({ id:item.id, body:item.content, date:item.created_date || "Today" })));
+    setAnalytics(analyticsData); setVerse(verseData);
+    if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, title:item.titleEn, body:item.prayerEn, icon:"♡", tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
+  };
+  useEffect(() => { api("/auth/me", {}, token).then(refresh).catch(signOut); }, []);
   const title = NAV_ITEMS.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{NAV_ITEMS.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><span>{initials(user.fullName)}</span><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile">{initials(user.fullName)}</button></header>
       <div className="screen-wrap">
-        {tab === "home" && <HomeScreen user={user} goals={goals} openAi={() => setTab("ai")} />}
-        {tab === "prayers" && <PrayerScreen openAi={() => setTab("ai")} />}
-        {tab === "journal" && <JournalScreen entries={journal} setEntries={setJournal} />}
-        {tab === "goals" && <GoalsScreen goals={goals} setGoals={setGoals} />}
+        {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} verse={verse} refresh={refresh} openAi={() => setTab("ai")} />}
+        {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
+        {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} />}
+        {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} />}
         {tab === "wellness" && <WellnessScreen />}
-        {tab === "ai" && <AiScreen />}
-        {tab === "profile" && <ProfileScreen user={user} language={language} signOut={() => setUser(null)} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
-        {tab === "admin" && <AdminScreen goals={goals} entries={journal} />}
+        {tab === "ai" && <AiScreen user={user} />}
+        {tab === "profile" && <ProfileScreen user={user} language={language} signOut={signOut} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
+        {tab === "admin" && <AdminScreen token={token} goals={goals} entries={journal} />}
       </div>
     </div><nav className="mobile-nav">{NAV_ITEMS.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
 }
 
 function NavButton({ item, active, onClick }: { item: { label: string; icon: string }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
-function HomeScreen({ user, goals, openAi }: { user: User; goals: Goal[]; openAi: () => void }) {
+function HomeScreen({ user, token, goals, analytics, verse, refresh, openAi }: { user: User; token:string; goals: Goal[]; analytics:Analytics; verse:{verse:string;reference:string}; refresh:()=>Promise<void>; openAi: () => void }) {
   const [mood, setMood] = useState<string | null>(null), done = goals.filter(g => g.done).length;
   return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {user.fullName.split(" ")[0]}</h2></div><button className="button primary" onClick={openAi}>✦ Ask AI Companion</button></section>
-    <div className="dashboard-grid"><div className="main-column"><article className="verse-card"><p>Verse of the day</p><q>I can do all things through Christ who strengthens me.</q><b>Philippians 4:13</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => <button onClick={() => setMood(x)} key={x}><span>{moodIcon(x)}</span>{x}</button>)}</div></section></div>
-      <div className="side-column"><div className="stat-grid"><Stat value="18" label="Prayers" /><Stat value="7" label="Day streak" /><Stat value={`${done}`} label="Goals done" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "✓" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} close={() => setMood(null)} />}</>;
+    <div className="dashboard-grid"><div className="main-column"><article className="verse-card"><p>Verse of the day</p><q>{verse.verse}</q><b>{verse.reference}</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => <button onClick={() => setMood(x)} key={x}><span>{moodIcon(x)}</span>{x}</button>)}</div></section></div>
+      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "✓" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
 }
-function PrayerScreen({ openAi }: { openAi: () => void }) { return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>✦ Ask AI Companion</button>} /><div className="library-grid">{PRAYER_LIBRARY.map(p => <PrayerTile {...p} key={p.title} />)}</div></>; }
-function JournalScreen({ entries, setEntries }: { entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void }) {
-  const [text, setText] = useState(""); return <><PageIntro title="Prayer Journal" subtitle="Record requests, make room for reflection, and celebrate answers." /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder="What are you carrying today?" /><button className="button primary" onClick={() => { if (text.trim()) { setEntries([{ id: id(), body: text.trim(), date: "Today" }, ...entries]); setText(""); } }}>+ Add entry</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
+function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>✦ Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={p.id || p.title} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
+function JournalScreen({ token, entries, setEntries }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void }) {
+  const [text, setText] = useState(""); return <><PageIntro title="Prayer Journal" subtitle="Record requests, make room for reflection, and celebrate answers." /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder="What are you carrying today?" /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>+ Add entry</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
 }
-function GoalsScreen({ goals, setGoals }: { goals: Goal[]; setGoals: (goals: Goal[]) => void }) {
-  const [text, setText] = useState(""); const toggle = (goalId: string) => setGoals(goals.map(goal => goal.id === goalId ? { ...goal, done: !goal.done } : goal));
-  return <><PageIntro title="Daily Goals" subtitle="Small faithful steps, beautifully tracked." /><Panel className="goal-compose"><input value={text} onChange={e => setText(e.target.value)} placeholder="Add a new daily goal" /><button className="button primary" onClick={() => { if (text.trim()) { setGoals([...goals, { id: id(), text: text.trim(), done: false }]); setText(""); } }}>+ Add goal</button></Panel><div className="goal-list">{goals.map(goal => <label className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id}><input type="checkbox" checked={goal.done} onChange={() => toggle(goal.id)} /><span>{goal.text}</span></label>)}</div></>;
+function GoalsScreen({ token, goals, refresh }: { token:string; goals: Goal[]; refresh:()=>Promise<void> }) {
+  const [active,setActive]=useState<Goal|null>(null);
+  return <><PageIntro title="Daily Goals" subtitle="Open each assigned activity and complete the faithful step." /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"✓":"○"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
 }
 function WellnessScreen() { return <><PageIntro title="Spiritual Wellness" subtitle="A gentle overview of your faith rhythm." /><div className="wellness-grid"><Panel className="score-panel"><div className="score-ring"><span>82%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>Prayer, goals, gratitude, and rest are moving in a strong direction.</p></div></Panel><div className="metric-grid"><Stat value="82%" label="Peace" /><Stat value="64%" label="Rest" /><Stat value="7 days" label="Consistency" /></div></div><PrayerTile title="Guided Affirmation" body="I am loved, held, restored, and strengthened for today." icon="♡" tone="green" /></>; }
-function AiScreen() {
+function AiScreen({user}:{user:User}) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: "Hello. I am your Bible and prayer AI. Ask me for a prayer, verse, or encouragement." }]); const [input, setInput] = useState(""); const [typing, setTyping] = useState(false);
-  const send = (suggestion?: string) => { const value = (suggestion || input).trim(); if (!value || typing) return; setMessages(prev => [...prev, { role: "user", content: value }]); setInput(""); setTyping(true); setTimeout(() => { setMessages(prev => [...prev, { role: "assistant", content: `Lord, meet me in this moment. Bring peace, wisdom, and steady hope as I pray about ${value.toLowerCase()}. Remind me that I am held by Your grace. Amen.` }]); setTyping(false); }, 650); };
+  const send = async (suggestion?: string) => { const value = (suggestion || input).trim(); if (!value || typing) return; const history=[...messages,{role:"user" as const,content:value}]; setMessages(history); setInput(""); setTyping(true); try{const data=await api<any>("/ai/chat",{method:"POST",body:JSON.stringify({message:value,sessionId:`web-${user.email}`,language:user.language,userEmail:user.email,history:history.map(m=>({role:m.role==="assistant"?"model":"user",content:m.content}))})});setMessages(prev=>[...prev,{role:"assistant",content:data.reply}]);}catch{setMessages(prev=>[...prev,{role:"assistant",content:"I could not connect right now. Please try again shortly."}]);}finally{setTyping(false);} };
   return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><Panel className="chat-panel"><div className="messages">{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send →</button></div></Panel></>;
 }
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
   const [emails, setEmails] = useState(true); return <><PageIntro title="My Profile" subtitle="Personal settings and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><span>{initials(user.fullName)}</span><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel></div></>;
 }
-function AdminScreen({ goals, entries }: { goals: Goal[]; entries: JournalEntry[] }) { return <><PageIntro title="Admin Dashboard" subtitle="Platform overview for the ReviveSpring team." /><div className="metric-grid admin"><Stat value="1,248" label="Users" /><Stat value="4,806" label="Prayers" /><Stat value={`${entries.length}`} label="Journal entries" /><Stat value={`${goals.length}`} label="Goals" /></div><Panel><SectionTitle title="System overview" subtitle="Connected services and content status." /><div className="admin-table"><p><b>User accounts</b><span>Healthy</span></p><p><b>Prayer library</b><span>4 active collections</span></p><p><b>AI conversations</b><span>Available</span></p></div></Panel></>; }
+function AdminScreen({ token, goals, entries }: { token:string; goals: Goal[]; entries: JournalEntry[] }) { const[goalTitle,setGoalTitle]=useState("");const[goalContent,setGoalContent]=useState("");const[prayerTitle,setPrayerTitle]=useState("");const[prayerText,setPrayerText]=useState("");const[verse,setVerse]=useState("");const[reference,setReference]=useState("");const[notice,setNotice]=useState("");const addGoal=async()=>{await api("/admin/goals",{method:"POST",body:JSON.stringify({titleEn:goalTitle,contentEn:goalContent,kind:"scripture",durationSeconds:10})},token);setGoalTitle("");setGoalContent("");setNotice("Daily goal template added.")};const addPrayer=async()=>{await api("/admin/library",{method:"POST",body:JSON.stringify({category:"guided",titleEn:prayerTitle,prayerEn:prayerText})},token);setPrayerTitle("");setPrayerText("");setNotice("Prayer added to rotation.")};const addVerse=async()=>{await api("/admin/verse",{method:"POST",body:JSON.stringify({verseEn:verse,reference})},token);setVerse("");setReference("");setNotice("Daily verse added to the rotation.")};return <><PageIntro title="Admin Dashboard" subtitle="Organize daily goals, rotating prayers, and daily verses." /><div className="metric-grid admin"><Stat value="Live" label="Database" /><Stat value={`${entries.length}`} label="Journal entries" /><Stat value={`${goals.length}`} label="Assigned goals" /><Stat value="Active" label="Prayer rotation" /></div>{notice&&<p className="admin-notice">{notice}</p>}<div className="admin-editor-grid"><Panel><SectionTitle title="Add daily goal" subtitle="Assigned when users open today's goals."/><div className="form-stack"><input value={goalTitle} onChange={e=>setGoalTitle(e.target.value)} placeholder="Goal title"/><textarea value={goalContent} onChange={e=>setGoalContent(e.target.value)} placeholder="Bible passage or activity instructions"/><button disabled={!goalTitle.trim()} className="button primary" onClick={addGoal}>Add daily goal</button></div></Panel><Panel><SectionTitle title="Add rotating prayer" subtitle="Shown in a fresh order on the Pray screen."/><div className="form-stack"><input value={prayerTitle} onChange={e=>setPrayerTitle(e.target.value)} placeholder="Prayer title"/><textarea value={prayerText} onChange={e=>setPrayerText(e.target.value)} placeholder="Prayer text"/><button disabled={!prayerTitle.trim()||!prayerText.trim()} className="button primary" onClick={addPrayer}>Add prayer</button></div></Panel><Panel><SectionTitle title="Add daily verse" subtitle="Rotates automatically when no date is specified."/><div className="form-stack"><textarea value={verse} onChange={e=>setVerse(e.target.value)} placeholder="Bible verse"/><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Reference"/><button disabled={!verse.trim()||!reference.trim()} className="button primary" onClick={addVerse}>Add verse</button></div></Panel></div></>; }
 
 function PageIntro({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) { return <header className="page-intro"><div><p className="eyebrow">ReviveSpring</p><h2>{title}</h2><p>{subtitle}</p></div>{action}</header>; }
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) { return <div className="section-title"><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>; }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section>; }
 function Stat({ value, label }: { value: string; label: string }) { return <div className="stat"><b>{value}</b><span>{label}</span></div>; }
-function PrayerTile({ title, body, icon, tone }: { title: string; body: string; icon: string; tone: string }) { return <article className="prayer-tile"><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div><button title={`Open ${title}`}>→</button></article>; }
-function MoodModal({ mood, close }: { mood: string; close: () => void }) { return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="tile-icon lime">{moodIcon(mood)}</span><p className="eyebrow">A prayer for {mood.toLowerCase()}</p><h2>God is with you in this moment.</h2><q>Cast all your anxiety on Him because He cares for you.</q><b>1 Peter 5:7</b><p>Heavenly Father, quiet my heart and fill me with Your peace. Help me take the next faithful step with courage and grace. Amen.</p><button className="button primary full" onClick={close}>Save this prayer</button></section></div>; }
+function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: string; tone: string; onOpen?:()=>void }) { return <article className="prayer-tile"><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div><button title={`Open ${title}`} onClick={onOpen}>→</button></article>; }
+function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item={title:`Prayer for ${mood}`,body:"Heavenly Father, quiet my heart and fill me with Your peace. Help me take the next faithful step with courage and grace. Amen.",icon:moodIcon(mood),tone:"lime",mood,verse:"Cast all your anxiety on Him because He cares for you.",reference:"1 Peter 5:7"}; return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
+function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const[recorded,setRecorded]=useState(false);useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);useEffect(()=>{if(seconds>=60&&!recorded){setRecorded(true);api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:seconds})},token).then(refresh)}},[seconds,recorded]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p><p className="timer-copy">{recorded?"Prayer recorded.":`Stay in this prayer for ${60-seconds} more seconds to record it.`}</p></section></div>}
+function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
 function initials(name: string) { return name.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase(); }
 function moodIcon(mood: string) { return mood === "Grateful" ? "♡" : mood === "Healing" ? "+" : mood === "Protection" ? "◇" : mood.includes("peace") ? "☼" : mood.includes("job") ? "□" : mood.includes("Financial") ? "$" : mood === "Sad" ? "≈" : mood === "Confused" ? "?" : "☁"; }
