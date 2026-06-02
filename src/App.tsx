@@ -389,7 +389,14 @@ function MainApp({ user, onSignOut, language }: { user: User; onSignOut: () => v
     };
   }, [goals, prayers]);
 
-  const tabs = ['Home', 'Prayers', 'Journal', 'Goals', 'Analytics', 'Profile'] as const;
+  const tabs = [
+    { label: 'Home', icon: '🏠' },
+    { label: 'Prayers', icon: '🙏' },
+    { label: 'Journal', icon: '📔' },
+    { label: 'Goals', icon: '🎯' },
+    { label: 'Analytics', icon: '📊' },
+    { label: 'Profile', icon: '👤' },
+  ] as const;
 
   return (
     <div className="app-shell">
@@ -555,9 +562,10 @@ function MainApp({ user, onSignOut, language }: { user: User; onSignOut: () => v
       </main>
 
       <footer className="bottom-nav">
-        {tabs.map((label, idx) => (
-          <button key={label} className={index === idx ? 'nav-button active' : 'nav-button'} onClick={() => setIndex(idx)}>
-            {label}
+        {tabs.map((item, idx) => (
+          <button key={item.label} className={index === idx ? 'nav-button active' : 'nav-button'} onClick={() => setIndex(idx)}>
+            <span>{item.icon}</span>
+            <span>{item.label}</span>
           </button>
         ))}
       </footer>
