@@ -164,7 +164,7 @@ export default function App() {
   const [token, setToken] = useStore<string | null>("rs_token", null);
   const [onboarded, setOnboarded] = useStore("rs_onboarded", false);
   const activeUser = normalizeUser(user, language);
-  const setupPath = !language ? "/language" : !activeUser ? "/auth" : !onboarded ? "/onboarding" : "/app";
+  const setupPath = !language ? "/language" : !activeUser || !token ? "/auth" : !onboarded ? "/onboarding" : "/app";
   return (
     <AppErrorBoundary>
     <Routes>
