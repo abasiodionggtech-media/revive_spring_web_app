@@ -3,7 +3,17 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 type Lang = "en" | "fr";
 type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
-type User = { fullName: string; email: string; language: Lang; plan: string; isAdmin?: boolean };
+type User = {
+  fullName: string;
+  email: string;
+  language: Lang;
+  plan: string;
+  isAdmin?: boolean;
+  photoUrl?: string | null;
+  authProvider?: "email" | "google";
+  isEmailVerified?: boolean;
+  hasCompletedOnboarding?: boolean;
+};
 type Goal = { id: string; text: string; done: boolean; kind?: string; content?: string; durationSeconds?: number };
 type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
@@ -12,6 +22,18 @@ type PrayerItem = { id?: string; title: string; body: string; icon: string; tone
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
+
+class ApiError extends Error {
+  status: number;
+  data: any;
+
+  constructor(message: string, status: number, data: any) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
 
 const API_URL = import.meta.env.VITE_API_URL || "https://revivespring.onrender.com/api";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
@@ -84,20 +106,36 @@ async function api<T>(path: string, options: RequestInit = {}, token?: string): 
     headers,
   });
   const data = response.status === 204 ? null : await response.json();
-  if (!response.ok) throw new Error(data?.message || "Request failed.");
+  if (!response.ok) throw new ApiError(data?.message || "Request failed.", response.status, data);
   return data as T;
 }
 function mapUser(raw: any): User {
-  return { fullName: raw.fullName || raw.full_name || "Friend", email: raw.email, language: raw.language || "en", plan: raw.subscriptionStatus || raw.plan || "free", isAdmin: raw.role === "admin" };
+  const hasCompletedOnboarding = raw.hasCompletedOnboarding ?? (raw.onboardingData?.completedAt || raw.onboarding_data?.completedAt ? true : undefined);
+  return {
+    fullName: raw.fullName || raw.full_name || "Friend",
+    email: raw.email,
+    language: raw.language || "en",
+    plan: raw.subscriptionStatus || raw.plan || "free",
+    isAdmin: raw.role === "admin",
+    photoUrl: raw.profileImageUrl || raw.profile_image_url || raw.photoUrl || null,
+    authProvider: raw.authProvider || raw.auth_provider || "email",
+    isEmailVerified: raw.isEmailVerified !== false,
+    hasCompletedOnboarding,
+  };
 }
 function normalizeUser(raw: any, fallbackLanguage: Lang | null): User | null {
   if (!raw || !raw.email) return null;
+  const hasCompletedOnboarding = raw.hasCompletedOnboarding ?? (raw.onboardingData?.completedAt || raw.onboarding_data?.completedAt ? true : undefined);
   return {
     fullName: raw.fullName || raw.full_name || raw.name || raw.displayName || "Friend",
     email: raw.email,
     language: raw.language || fallbackLanguage || "en",
     plan: raw.plan || raw.subscriptionStatus || "free",
     isAdmin: raw.isAdmin === true || raw.role === "admin",
+    photoUrl: raw.profileImageUrl || raw.profile_image_url || raw.photoUrl || null,
+    authProvider: raw.authProvider || raw.auth_provider || "email",
+    isEmailVerified: raw.isEmailVerified !== false,
+    hasCompletedOnboarding,
   };
 }
 function mapGoal(raw: any): Goal {
@@ -164,17 +202,18 @@ export default function App() {
   const [token, setToken] = useStore<string | null>("rs_token", null);
   const [onboarded, setOnboarded] = useStore("rs_onboarded", false);
   const activeUser = normalizeUser(user, language);
-  const setupPath = !language ? "/language" : !activeUser || !token ? "/auth" : !onboarded ? "/onboarding" : "/app";
+  const isOnboarded = activeUser?.hasCompletedOnboarding ?? onboarded;
+  const setupPath = !language ? "/language" : !activeUser || !token ? "/auth" : !isOnboarded ? "/onboarding" : "/app";
   return (
     <AppErrorBoundary>
     <Routes>
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
       <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
-      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(true); }} />} />
-      <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); }} />} />
-      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} onComplete={() => setOnboarded(true)} /> : <Navigate to="/auth" replace />} />
-      <Route path="/app" element={activeUser && token && onboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
+      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} onComplete={() => { setOnboarded(true); setUser(activeUser ? { ...activeUser, hasCompletedOnboarding: true } : activeUser); }} /> : <Navigate to="/auth" replace />} />
+      <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </AppErrorBoundary>
@@ -198,6 +237,14 @@ function SplashPage({ nextPath }: { nextPath: string }) {
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">✦</span><span><b>ReviveSpring</b>{!compact && <small>Faith for every day</small>}</span></div>;
+}
+
+function UserAvatar({ user, className = "" }: { user: User; className?: string }) {
+  const label = user.fullName || user.email || "Friend";
+  if (user.photoUrl) {
+    return <span className={`user-avatar image ${className}`.trim()}><img src={user.photoUrl} alt={label} /></span>;
+  }
+  return <span className={`user-avatar ${className}`.trim()}>{initials(label)}</span>;
 }
 
 function LanguagePage({ current, onSelect }: { current: Lang | null; onSelect: (lang: Lang) => void }) {
@@ -235,7 +282,9 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
           setBusy(true); setError("");
           try {
             const data = await api<any>("/auth/google", { method: "POST", body: JSON.stringify({ id_token: response.credential, language }) });
-            onLogin(mapUser(data.user), data.token); navigate("/app");
+            const nextUser = mapUser(data.user);
+            onLogin(nextUser, data.token);
+            navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
           } catch (err) { setError(err instanceof Error ? err.message : "Google sign-in failed."); }
           finally { setBusy(false); }
         },
@@ -254,9 +303,18 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
         sessionStorage.setItem("rs_pending_email", email); navigate("/verify");
       } else {
         const data = await api<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-        onLogin(mapUser(data.user), data.token); navigate("/app");
+        const nextUser = mapUser(data.user);
+        onLogin(nextUser, data.token);
+        navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
       }
-    } catch (err) { setError(err instanceof Error ? err.message : "Unable to continue."); }
+    } catch (err) {
+      if (err instanceof ApiError && err.data?.requiresVerification) {
+        sessionStorage.setItem("rs_pending_email", email);
+        navigate("/verify");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Unable to continue.");
+    }
     finally { setBusy(false); }
   };
   return <PublicShell><div className="auth-card">
@@ -342,8 +400,8 @@ function MainApp({ user, token, signOut, language }: { user: User; token: string
   useEffect(() => { api("/auth/me", {}, token).then(refresh).catch(signOut); }, []);
   const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: "⚙" }] : NAV_ITEMS;
   const title = navItems.find(item => item.id === tab)?.label || "Admin";
-  return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><span>{initials(user.fullName)}</span><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
-    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile">{initials(user.fullName)}</button></header>
+  return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
+    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></header>
       <div className="screen-wrap">
         {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
         {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
@@ -391,7 +449,7 @@ function AiScreen({user}:{user:User}) {
   return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><Panel className="chat-panel"><div className="messages">{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send →</button></div></Panel></>;
 }
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
-  const [emails, setEmails] = useState(true); return <><PageIntro title="My Profile" subtitle="Personal settings and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><span>{initials(user.fullName)}</span><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel></div></>;
+  const [emails, setEmails] = useState(true); return <><PageIntro title="My Profile" subtitle="Personal settings and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div><div className="profile-line"><span>Sign-in method</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel></div></>;
 }
 
 const ADMIN_SECTIONS = [
@@ -407,6 +465,12 @@ const ADMIN_SECTIONS = [
   ["ai", "AI Support"],
   ["store", "Store Listing"],
 ] as const;
+
+function formatAdminDate(value?: string | null) {
+  if (!value) return "No date";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "No date" : date.toLocaleDateString();
+}
 
 function AdminControlCenter({ token }: { token: string }) {
   const [section, setSection] = useState("overview");
@@ -432,8 +496,9 @@ function AdminControlCenter({ token }: { token: string }) {
 
   const loadAdmin = async () => {
     setLoading(true);
+    setNotice("");
     try {
-      const [statsData, userData, libraryData, mentalData, salvationData, settingsData, convoData, knowledgeData] = await Promise.all([
+      const results = await Promise.allSettled([
         api<any>("/admin/stats", {}, token),
         api<any>(`/admin/users?limit=25${search ? `&search=${encodeURIComponent(search)}` : ""}`, {}, token),
         api<any[]>("/admin/library", {}, token),
@@ -443,16 +508,22 @@ function AdminControlCenter({ token }: { token: string }) {
         api<any>("/admin/ai/conversations?limit=10", {}, token),
         api<any[]>("/admin/ai/knowledge", {}, token),
       ]);
-      setStats(statsData);
-      setUsers(userData.users || []);
-      setLibrary(libraryData || []);
-      setMental(mentalData || []);
-      setSalvation(salvationData || []);
-      setSettings(settingsData || []);
-      setConversations(convoData.conversations || []);
-      setKnowledge(knowledgeData || []);
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Unable to load admin data.");
+      const [statsResult, userResult, libraryResult, mentalResult, salvationResult, settingsResult, convoResult, knowledgeResult] = results;
+
+      if (statsResult.status === "fulfilled") setStats(statsResult.value);
+      if (userResult.status === "fulfilled") setUsers(userResult.value.users || []);
+      if (libraryResult.status === "fulfilled") setLibrary(libraryResult.value || []);
+      if (mentalResult.status === "fulfilled") setMental(mentalResult.value || []);
+      if (salvationResult.status === "fulfilled") setSalvation(salvationResult.value || []);
+      if (settingsResult.status === "fulfilled") setSettings(settingsResult.value || []);
+      if (convoResult.status === "fulfilled") setConversations(convoResult.value.conversations || []);
+      if (knowledgeResult.status === "fulfilled") setKnowledge(knowledgeResult.value || []);
+
+      const rejected = results.filter((result) => result.status === "rejected");
+      if (rejected.length) {
+        const firstError = rejected[0] as PromiseRejectedResult;
+        setNotice(firstError.reason instanceof Error ? firstError.reason.message : "Some admin data could not be loaded.");
+      }
     } finally {
       setLoading(false);
     }
@@ -501,7 +572,7 @@ function AdminControlCenter({ token }: { token: string }) {
     </div>}
 
     {section === "users" && <div className="main-column">
-      <Panel><SectionTitle title="User management" subtitle="Verify, disable, delete, or change subscriptions." /><div className="admin-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" /><button className="button secondary" onClick={loadAdmin}>Search</button></div><AdminUserList users={users} actions={(user) => <><button onClick={() => updateUser(user.id, "/verify", {}, "User verified.")}>Verify</button><button onClick={() => updateUser(user.id, "/disable", { disabled: !user.isDisabled }, user.isDisabled ? "User enabled." : "User disabled.")}>{user.isDisabled ? "Enable" : "Disable"}</button><button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button><button className="danger" onClick={() => deleteUser(user.id)}>Delete</button></>} /></Panel>
+      <Panel><SectionTitle title="User management" subtitle="Verify, disable, delete, or change subscriptions." /><div className="admin-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" /><button className="button secondary" onClick={loadAdmin}>Search</button></div><AdminUserList users={users} actions={(user) => <><button onClick={() => updateUser(user.id, "/verify", {}, "User verified.")}>Verify</button><button onClick={() => updateUser(user.id, "/disable", { disabled: !user.isDisabled }, user.isDisabled ? "User enabled." : "User disabled.")}>{user.isDisabled ? "Enable" : "Disable"}</button><button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button><button onClick={() => updateUser(user.id, "/role", { role: user.role === "admin" ? "user" : "admin" }, user.role === "admin" ? "Admin access removed." : "Admin access granted.")}>{user.role === "admin" ? "Remove admin" : "Make admin"}</button><button className="danger" onClick={() => deleteUser(user.id)}>Delete</button></>} /></Panel>
       <Panel><SectionTitle title="Prayer of Salvation records" subtitle="Users who prayed and saved the date." /><AdminUserList users={salvationUsers} empty="No salvation prayer records yet." /></Panel>
     </div>}
 
@@ -578,7 +649,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 
 function AdminUserList({ users, actions, empty = "No users found." }: { users: any[]; actions?: (user: any) => React.ReactNode; empty?: string }) {
   if (!users.length) return <p>{empty}</p>;
-  return <div className="admin-list">{users.map(user => <div className="admin-row user" key={user.id}><div><b>{user.fullName || "Friend"}</b><p>{user.email}</p><small>{user.language || "en"} / {new Date(user.createdAt).toLocaleDateString()} / {user.isEmailVerified ? "verified" : "unverified"}{user.salvationPrayedAt ? ` / salvation ${new Date(user.salvationPrayedAt).toLocaleDateString()}` : ""}</small></div><span className="admin-pill">{user.subscriptionStatus || "free"}</span>{actions && <div className="admin-actions">{actions(user)}</div>}</div>)}</div>;
+  return <div className="admin-list">{users.map(user => <div className="admin-row user" key={user.id}><div className="admin-user-summary">{user.profileImageUrl || user.profile_image_url ? <img className="admin-user-image" src={user.profileImageUrl || user.profile_image_url} alt={user.fullName || user.email} /> : <span className="admin-user-fallback">{initials(user.fullName || user.email)}</span>}<div><b>{user.fullName || "Friend"}</b><p>{user.email}</p><small>{user.language || "en"} / {formatAdminDate(user.createdAt)} / {(user.authProvider || "email")} / {user.isEmailVerified ? "verified" : "unverified"}{user.salvationPrayedAt ? ` / salvation ${formatAdminDate(user.salvationPrayedAt)}` : ""}</small></div></div><span className="admin-pill">{user.subscriptionStatus || "free"}</span>{actions && <div className="admin-actions">{actions(user)}</div>}</div>)}</div>;
 }
 
 function AdminContentList({ items, onToggle, onDelete }: { items: any[]; onToggle?: (item: any) => void; onDelete?: (item: any) => void }) {
