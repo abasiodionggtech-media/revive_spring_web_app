@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { Component, FormEvent, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 type Lang = "en" | "fr";
@@ -36,6 +36,27 @@ declare global {
   }
 }
 
+class AppErrorBoundary extends Component<{ children: React.ReactNode }, { crashed: boolean }> {
+  state = { crashed: false };
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+  render() {
+    if (!this.state.crashed) return this.props.children;
+    return <main className="splash-screen">
+      <Brand />
+      <h1>Let us refresh your session</h1>
+      <p>Your saved browser session is out of date. Refreshing will take you back to sign in safely.</p>
+      <button className="button primary" onClick={() => {
+        localStorage.removeItem("rs_user");
+        localStorage.removeItem("rs_token");
+        localStorage.removeItem("rs_onboarded");
+        window.location.href = "/auth";
+      }}>Refresh session</button>
+    </main>;
+  }
+}
+
 function loadGoogleIdentity() {
   return new Promise<void>((resolve, reject) => {
     if (window.google?.accounts?.id) return resolve();
@@ -68,6 +89,16 @@ async function api<T>(path: string, options: RequestInit = {}, token?: string): 
 }
 function mapUser(raw: any): User {
   return { fullName: raw.fullName || raw.full_name || "Friend", email: raw.email, language: raw.language || "en", plan: raw.subscriptionStatus || raw.plan || "free", isAdmin: raw.role === "admin" };
+}
+function normalizeUser(raw: any, fallbackLanguage: Lang | null): User | null {
+  if (!raw || !raw.email) return null;
+  return {
+    fullName: raw.fullName || raw.full_name || raw.name || raw.displayName || "Friend",
+    email: raw.email,
+    language: raw.language || fallbackLanguage || "en",
+    plan: raw.plan || raw.subscriptionStatus || "free",
+    isAdmin: raw.isAdmin === true || raw.role === "admin",
+  };
 }
 function mapGoal(raw: any): Goal {
   return { id: raw.id, text: raw.text, done: raw.completed === true, kind: raw.kind, content: raw.content, durationSeconds: raw.duration_seconds || 10 };
@@ -132,18 +163,21 @@ export default function App() {
   const [user, setUser] = useStore<User | null>("rs_user", null);
   const [token, setToken] = useStore<string | null>("rs_token", null);
   const [onboarded, setOnboarded] = useStore("rs_onboarded", false);
-  const setupPath = !language ? "/language" : !user ? "/auth" : !onboarded ? "/onboarding" : "/app";
+  const activeUser = normalizeUser(user, language);
+  const setupPath = !language ? "/language" : !activeUser ? "/auth" : !onboarded ? "/onboarding" : "/app";
   return (
+    <AppErrorBoundary>
     <Routes>
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
       <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
       <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(true); }} />} />
       <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); }} />} />
-      <Route path="/onboarding" element={user && token ? <OnboardingPage language={language ?? "en"} token={token} onComplete={() => setOnboarded(true)} /> : <Navigate to="/auth" replace />} />
-      <Route path="/app" element={user && token && onboarded ? <MainApp user={user} token={token} signOut={() => { setUser(null); setToken(null); }} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
+      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} onComplete={() => setOnboarded(true)} /> : <Navigate to="/auth" replace />} />
+      <Route path="/app" element={activeUser && token && onboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </AppErrorBoundary>
   );
 }
 
@@ -332,7 +366,8 @@ function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayer
     return () => window.clearInterval(timer);
   }, []);
   const activeQuote = ROTATING_QUOTES[quote];
-  return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {user.fullName.split(" ")[0]}</h2></div><button className="button primary" onClick={openAi}>✦ Ask AI Companion</button></section>
+  const firstName = (user.fullName || "Friend").trim().split(" ")[0] || "Friend";
+  return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {firstName}</h2></div><button className="button primary" onClick={openAi}>✦ Ask AI Companion</button></section>
     <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>Verse of the day</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => <button onClick={() => setMood(x)} key={x}><span>{moodIcon(x)}</span>{x}</button>)}</div></section></div>
       <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "✓" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
 }
@@ -570,5 +605,8 @@ function MoodModal({ mood, token, refresh, close }: { mood: string; token:string
 function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){const required=15;const[seconds,setSeconds]=useState(0);const[recorded,setRecorded]=useState(false);useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);useEffect(()=>{if(seconds>=required&&!recorded){setRecorded(true);api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:seconds})},token).then(refresh)}},[seconds,recorded]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p><div className="timer-bar"><i style={{width:`${Math.min(100,(seconds/required)*100)}%`}} /></div><p className="timer-copy">{recorded?"Prayer recorded.":`Stay in this prayer for ${Math.max(0,required-seconds)} more seconds to record it.`}</p></section></div>}
 function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
-function initials(name: string) { return name.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase(); }
+function initials(name?: string) {
+  const parts = (name || "Friend").trim().split(/\s+/).filter(Boolean);
+  return (parts.length ? parts.map(part => part[0]).join("") : "F").slice(0, 2).toUpperCase();
+}
 function moodIcon(mood: string) { return mood === "Grateful" ? "♡" : mood === "Healing" ? "+" : mood === "Protection" ? "◇" : mood.includes("peace") ? "☼" : mood.includes("job") ? "□" : mood.includes("Financial") ? "$" : mood === "Sad" ? "≈" : mood === "Confused" ? "?" : "☁"; }
