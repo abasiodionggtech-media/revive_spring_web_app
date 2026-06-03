@@ -1,5 +1,6 @@
 ﻿import { CSSProperties, Component, FormEvent, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Cloud, Compass, DollarSign, Flag, HandHeart, HeartPulse, Home, Mail, Moon, Shield, Sparkles, UserRound } from "lucide-react";
 
 type Lang = "en" | "fr";
 type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
@@ -164,14 +165,14 @@ function mapGoal(raw: any): Goal {
   return { id: raw.id, text: raw.text, done: raw.completed === true, kind: raw.kind, content: raw.content, durationSeconds: raw.duration_seconds || 10 };
 }
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
-const NAV_ITEMS: { id: AppTab; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: "H" },
-  { id: "prayers", label: "Pray", icon: "P" },
-  { id: "journal", label: "Journal", icon: "J" },
-  { id: "goals", label: "Goals", icon: "G" },
-  { id: "wellness", label: "Wellness", icon: "W" },
-  { id: "ai", label: "AI Companion", icon: "A" },
-  { id: "profile", label: "Profile", icon: "U" },
+const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
+  { id: "home", label: "Home", icon: <Home size={16} /> },
+  { id: "prayers", label: "Pray", icon: <HandHeart size={16} /> },
+  { id: "journal", label: "Journal", icon: <Compass size={16} /> },
+  { id: "goals", label: "Goals", icon: <Flag size={16} /> },
+  { id: "wellness", label: "Wellness", icon: <HeartPulse size={16} /> },
+  { id: "ai", label: "AI Companion", icon: <Sparkles size={16} /> },
+  { id: "profile", label: "Profile", icon: <UserRound size={16} /> },
 ];
 const PRAYER_LIBRARY = [
   { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: "M", tone: "emerald" },
@@ -616,7 +617,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
       return refresh();
     }).catch(signOut);
   }, []);
-  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: "D" }] : NAV_ITEMS;
+  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <Shield size={16} /> }] : NAV_ITEMS;
   const title = navItems.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></header>
@@ -633,7 +634,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
 }
 
-function NavButton({ item, active, onClick }: { item: { label: string; icon: string }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
+function NavButton({ item, active, onClick }: { item: { label: string; icon: React.ReactNode }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
 function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayers }: { user: User; token:string; goals: Goal[]; analytics:Analytics; refresh:()=>Promise<void>; openAi: () => void; openPrayers: () => void }) {
   const [mood, setMood] = useState<string | null>(null), done = goals.filter(g => g.done).length;
   const [quote, setQuote] = useState(0);
