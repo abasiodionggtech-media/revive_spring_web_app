@@ -13,8 +13,7 @@ type Wellness = { overall?: number; insight?: string; pillars?: Record<string, {
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
 
-const id = () => Math.random().toString(36).slice(2, 10);
-const API_URL = "https://revivespring.onrender.com/api";
+const API_URL = import.meta.env.VITE_API_URL || "https://revivespring.onrender.com/api";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const ROTATING_QUOTES = [
   { verse: "Trust in the Lord with all your heart.", reference: "Proverbs 3:5" },
@@ -155,7 +154,7 @@ function SplashPage({ nextPath }: { nextPath: string }) {
     return () => window.clearTimeout(timer);
   }, [navigate, nextPath]);
   return <main className="splash-screen">
-    <div className="splash-logo"><span>RS</span></div>
+    <div className="splash-logo image"><img src="/revivespring-icon.png" alt="ReviveSpring" /></div>
     <h1>ReviveSpring</h1>
     <p>Revive Your Spirit. Renew Your Day.</p>
     <div className="splash-loader"><i /></div>
@@ -208,7 +207,8 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
         },
       });
       googleButton.current.innerHTML = "";
-      window.google.accounts.id.renderButton(googleButton.current, { theme: "outline", size: "large", text: "continue_with", width: 360 });
+      const buttonWidth = Math.min(360, googleButton.current.clientWidth || 360);
+      window.google.accounts.id.renderButton(googleButton.current, { theme: "outline", size: "large", text: "continue_with", width: buttonWidth });
     }).catch((err) => setError(err instanceof Error ? err.message : "Google Sign-In failed to load."));
     return () => { cancelled = true; };
   }, [language, navigate, onLogin]);
@@ -306,8 +306,9 @@ function MainApp({ user, token, signOut, language }: { user: User; token: string
     if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, title:item.titleEn, body:item.prayerEn, icon:"♡", tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
   };
   useEffect(() => { api("/auth/me", {}, token).then(refresh).catch(signOut); }, []);
-  const title = NAV_ITEMS.find(item => item.id === tab)?.label || "Admin";
-  return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{NAV_ITEMS.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><span>{initials(user.fullName)}</span><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
+  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: "⚙" }] : NAV_ITEMS;
+  const title = navItems.find(item => item.id === tab)?.label || "Admin";
+  return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><span>{initials(user.fullName)}</span><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile">{initials(user.fullName)}</button></header>
       <div className="screen-wrap">
         {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
@@ -317,9 +318,9 @@ function MainApp({ user, token, signOut, language }: { user: User; token: string
         {tab === "wellness" && <WellnessScreen token={token} />}
         {tab === "ai" && <AiScreen user={user} />}
         {tab === "profile" && <ProfileScreen user={user} language={language} signOut={signOut} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
-        {tab === "admin" && <AdminScreen token={token} goals={goals} entries={journal} />}
+        {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
       </div>
-    </div><nav className="mobile-nav">{NAV_ITEMS.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
+    </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
 }
 
 function NavButton({ item, active, onClick }: { item: { label: string; icon: string }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
@@ -357,6 +358,207 @@ function AiScreen({user}:{user:User}) {
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
   const [emails, setEmails] = useState(true); return <><PageIntro title="My Profile" subtitle="Personal settings and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><span>{initials(user.fullName)}</span><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel></div></>;
 }
+
+const ADMIN_SECTIONS = [
+  ["overview", "Overview"],
+  ["users", "Users"],
+  ["content", "Prayer Library"],
+  ["wellness", "Wellness"],
+  ["salvation", "Salvation"],
+  ["analytics", "Analytics"],
+  ["subscriptions", "Subscriptions"],
+  ["communication", "Notifications"],
+  ["settings", "App Settings"],
+  ["ai", "AI Support"],
+  ["store", "Store Listing"],
+] as const;
+
+function AdminControlCenter({ token }: { token: string }) {
+  const [section, setSection] = useState("overview");
+  const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<any>({});
+  const [users, setUsers] = useState<any[]>([]);
+  const [library, setLibrary] = useState<any[]>([]);
+  const [mental, setMental] = useState<any[]>([]);
+  const [salvation, setSalvation] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [knowledge, setKnowledge] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [prayerForm, setPrayerForm] = useState({ category: "morning", titleEn: "", titleFr: "", verseEn: "", verseFr: "", verseRef: "", prayerEn: "", prayerFr: "", actionEn: "", actionFr: "", isPremium: false, isVisible: true });
+  const [mentalForm, setMentalForm] = useState({ category: "anxiety", titleEn: "", titleFr: "", contentEn: "", contentFr: "", audioUrl: "", isPremium: true, isVisible: true });
+  const [goalForm, setGoalForm] = useState({ titleEn: "", titleFr: "", kind: "scripture", contentEn: "", contentFr: "", durationSeconds: 10, isActive: true });
+  const [verseForm, setVerseForm] = useState({ verseEn: "", verseFr: "", reference: "", activeOn: "", isActive: true });
+  const [salvationForm, setSalvationForm] = useState({ key: "intro", contentEn: "", contentFr: "" });
+  const [settingForm, setSettingForm] = useState({ key: "safety_disclaimer_en", value: "" });
+  const [knowledgeForm, setKnowledgeForm] = useState({ category: "general", question: "", answerEn: "", answerFr: "", isActive: true });
+  const [broadcastForm, setBroadcastForm] = useState({ prayer: "", verse: "", ref: "", action: "" });
+
+  const loadAdmin = async () => {
+    setLoading(true);
+    try {
+      const [statsData, userData, libraryData, mentalData, salvationData, settingsData, convoData, knowledgeData] = await Promise.all([
+        api<any>("/admin/stats", {}, token),
+        api<any>(`/admin/users?limit=25${search ? `&search=${encodeURIComponent(search)}` : ""}`, {}, token),
+        api<any[]>("/admin/library", {}, token),
+        api<any[]>("/admin/mental-health", {}, token),
+        api<any[]>("/admin/salvation", {}, token),
+        api<any[]>("/admin/settings", {}, token),
+        api<any>("/admin/ai/conversations?limit=10", {}, token),
+        api<any[]>("/admin/ai/knowledge", {}, token),
+      ]);
+      setStats(statsData);
+      setUsers(userData.users || []);
+      setLibrary(libraryData || []);
+      setMental(mentalData || []);
+      setSalvation(salvationData || []);
+      setSettings(settingsData || []);
+      setConversations(convoData.conversations || []);
+      setKnowledge(knowledgeData || []);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Unable to load admin data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAdmin(); }, [token]);
+
+  const run = async (message: string, task: () => Promise<unknown>) => {
+    setNotice("");
+    try {
+      await task();
+      setNotice(message);
+      await loadAdmin();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Admin action failed.");
+    }
+  };
+  const saveSetting = (key: string, value: string) => run("Setting saved.", () => api(`/admin/settings/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ value }) }, token));
+  const updateUser = (userId: string, path: string, body: Record<string, unknown>, message: string) => run(message, () => api(`/admin/users/${userId}${path}`, { method: "PATCH", body: JSON.stringify(body) }, token));
+  const deleteUser = (userId: string) => window.confirm("Delete this user and all related records?") && run("User deleted.", () => api(`/admin/users/${userId}`, { method: "DELETE" }, token));
+
+  const settingsMap = Object.fromEntries(settings.map((item) => [item.key, item.value]));
+  const salvationUsers = users.filter((user) => user.salvationPrayedAt);
+  const activePlanUsers = users.filter((user) => user.subscriptionStatus === "premium");
+
+  return <div className="admin-control">
+    <PageIntro title="Admin Management" subtitle="Full ReviveSpring backend control without touching code." action={<button className="button secondary" onClick={loadAdmin}>{loading ? "Refreshing..." : "Refresh"}</button>} />
+    <div className="metric-grid admin admin-metrics">
+      <Stat value={`${stats.totalUsers ?? "--"}`} label="Users" />
+      <Stat value={`${stats.dailyActiveUsers ?? "--"}`} label="Daily active" />
+      <Stat value={`${stats.premiumUsers ?? "--"}`} label="Premium" />
+      <Stat value={`${stats.conversionRate ?? 0}%`} label="Conversion" />
+      <Stat value={`${stats.salvationUsers ?? "--"}`} label="Salvation" />
+      <Stat value={`${stats.totalPrayers ?? "--"}`} label="Prayers" />
+      <Stat value={`${stats.totalJournal ?? "--"}`} label="Journal" />
+      <Stat value={`${stats.disabledUsers ?? "--"}`} label="Disabled" />
+    </div>
+    {notice && <p className="admin-notice">{notice}</p>}
+    <div className="admin-tabs">{ADMIN_SECTIONS.map(([id, label]) => <button key={id} className={section === id ? "active" : ""} onClick={() => setSection(id)}>{label}</button>)}</div>
+
+    {section === "overview" && <div className="admin-section-grid">
+      <AdminModule title="Live database" body="Users, prayers, journal entries, daily goals, wellness content, salvation content, and AI records are connected to backend tables." items={["Admin-only access", "Live refresh", "Database-backed changes"]} />
+      <AdminModule title="Popular moods" body="Mood and prayer usage from real prayer records." items={(stats.topMoods || []).map((item: any) => `${item.mood}: ${item.count}`)} />
+      <Panel><SectionTitle title="Recent users" subtitle="Newest registered accounts." /><AdminUserList users={stats.recentUsers || users.slice(0, 5)} /></Panel>
+      <AdminModule title="Revenue status" body="Subscriptions are manageable from user plans. Stripe and RevenueCat reporting can be stored in settings until payment webhooks are added." items={[`Premium users: ${stats.premiumUsers ?? 0}`, `Free users: ${stats.freeUsers ?? 0}`, `Conversion: ${stats.conversionRate ?? 0}%`]} />
+    </div>}
+
+    {section === "users" && <div className="main-column">
+      <Panel><SectionTitle title="User management" subtitle="Verify, disable, delete, or change subscriptions." /><div className="admin-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" /><button className="button secondary" onClick={loadAdmin}>Search</button></div><AdminUserList users={users} actions={(user) => <><button onClick={() => updateUser(user.id, "/verify", {}, "User verified.")}>Verify</button><button onClick={() => updateUser(user.id, "/disable", { disabled: !user.isDisabled }, user.isDisabled ? "User enabled." : "User disabled.")}>{user.isDisabled ? "Enable" : "Disable"}</button><button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button><button className="danger" onClick={() => deleteUser(user.id)}>Delete</button></>} /></Panel>
+      <Panel><SectionTitle title="Prayer of Salvation records" subtitle="Users who prayed and saved the date." /><AdminUserList users={salvationUsers} empty="No salvation prayer records yet." /></Panel>
+    </div>}
+
+    {section === "content" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="Add prayer" subtitle="English and French library content." /><AdminInput label="Category" value={prayerForm.category} onChange={value => setPrayerForm({ ...prayerForm, category: value })} /><AdminInput label="Title EN" value={prayerForm.titleEn} onChange={value => setPrayerForm({ ...prayerForm, titleEn: value })} /><AdminInput label="Title FR" value={prayerForm.titleFr} onChange={value => setPrayerForm({ ...prayerForm, titleFr: value })} /><AdminText label="Prayer EN" value={prayerForm.prayerEn} onChange={value => setPrayerForm({ ...prayerForm, prayerEn: value })} /><AdminText label="Prayer FR" value={prayerForm.prayerFr} onChange={value => setPrayerForm({ ...prayerForm, prayerFr: value })} /><AdminInput label="Verse reference" value={prayerForm.verseRef} onChange={value => setPrayerForm({ ...prayerForm, verseRef: value })} /><AdminInput label="Action step EN" value={prayerForm.actionEn} onChange={value => setPrayerForm({ ...prayerForm, actionEn: value })} /><Toggle label="Premium content" checked={prayerForm.isPremium} onChange={value => setPrayerForm({ ...prayerForm, isPremium: value })} /><button className="button primary full" disabled={!prayerForm.titleEn || !prayerForm.prayerEn} onClick={() => run("Prayer added.", () => api("/admin/library", { method: "POST", body: JSON.stringify(prayerForm) }, token))}>Add prayer</button></Panel>
+      <Panel><SectionTitle title="Prayer library" subtitle="Edit visibility or remove records." /><AdminContentList items={library} onToggle={(item) => run("Prayer visibility updated.", () => api(`/admin/library/${item.id}`, { method: "PATCH", body: JSON.stringify({ isVisible: !item.isVisible }) }, token))} onDelete={(item) => run("Prayer deleted.", () => api(`/admin/library/${item.id}`, { method: "DELETE" }, token))} /></Panel>
+      <Panel><SectionTitle title="Daily verse card" subtitle="Update the home screen verse rotation." /><AdminText label="Verse EN" value={verseForm.verseEn} onChange={value => setVerseForm({ ...verseForm, verseEn: value })} /><AdminText label="Verse FR" value={verseForm.verseFr} onChange={value => setVerseForm({ ...verseForm, verseFr: value })} /><AdminInput label="Reference" value={verseForm.reference} onChange={value => setVerseForm({ ...verseForm, reference: value })} /><AdminInput label="Active date YYYY-MM-DD" value={verseForm.activeOn} onChange={value => setVerseForm({ ...verseForm, activeOn: value })} /><button className="button primary full" disabled={!verseForm.verseEn || !verseForm.reference} onClick={() => run("Daily verse added.", () => api("/admin/verse", { method: "POST", body: JSON.stringify({ ...verseForm, activeOn: verseForm.activeOn || null }) }, token))}>Add verse</button></Panel>
+    </div>}
+
+    {section === "wellness" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="Premium wellness content" subtitle="Anxiety, sleep, grief, identity, prompts, and audio." /><AdminInput label="Category" value={mentalForm.category} onChange={value => setMentalForm({ ...mentalForm, category: value })} /><AdminInput label="Title EN" value={mentalForm.titleEn} onChange={value => setMentalForm({ ...mentalForm, titleEn: value })} /><AdminInput label="Title FR" value={mentalForm.titleFr} onChange={value => setMentalForm({ ...mentalForm, titleFr: value })} /><AdminText label="Content EN" value={mentalForm.contentEn} onChange={value => setMentalForm({ ...mentalForm, contentEn: value })} /><AdminText label="Content FR" value={mentalForm.contentFr} onChange={value => setMentalForm({ ...mentalForm, contentFr: value })} /><AdminInput label="Audio URL" value={mentalForm.audioUrl} onChange={value => setMentalForm({ ...mentalForm, audioUrl: value })} /><Toggle label="Visible to users" checked={mentalForm.isVisible} onChange={value => setMentalForm({ ...mentalForm, isVisible: value })} /><Toggle label="Premium" checked={mentalForm.isPremium} onChange={value => setMentalForm({ ...mentalForm, isPremium: value })} /><button className="button primary full" disabled={!mentalForm.titleEn || !mentalForm.contentEn} onClick={() => run("Wellness content added.", () => api("/admin/mental-health", { method: "POST", body: JSON.stringify(mentalForm) }, token))}>Add wellness item</button></Panel>
+      <Panel><SectionTitle title="Wellness library" subtitle="Control previews and visibility." /><AdminContentList items={mental} onToggle={(item) => run("Wellness visibility updated.", () => api(`/admin/mental-health/${item.id}`, { method: "PATCH", body: JSON.stringify({ isVisible: !item.isVisible }) }, token))} onDelete={(item) => run("Wellness content deleted.", () => api(`/admin/mental-health/${item.id}`, { method: "DELETE" }, token))} /></Panel>
+      <Panel><SectionTitle title="Daily goals" subtitle="Organize assigned daily user tasks." /><AdminInput label="Goal title EN" value={goalForm.titleEn} onChange={value => setGoalForm({ ...goalForm, titleEn: value })} /><AdminInput label="Goal title FR" value={goalForm.titleFr} onChange={value => setGoalForm({ ...goalForm, titleFr: value })} /><AdminInput label="Kind" value={goalForm.kind} onChange={value => setGoalForm({ ...goalForm, kind: value })} /><AdminText label="Content EN" value={goalForm.contentEn} onChange={value => setGoalForm({ ...goalForm, contentEn: value })} /><AdminInput label="Duration seconds" value={`${goalForm.durationSeconds}`} onChange={value => setGoalForm({ ...goalForm, durationSeconds: Number(value) || 10 })} /><button className="button primary full" disabled={!goalForm.titleEn} onClick={() => run("Daily goal template added.", () => api("/admin/goals", { method: "POST", body: JSON.stringify(goalForm) }, token))}>Add daily goal</button></Panel>
+    </div>}
+
+    {section === "salvation" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="Prayer of Salvation" subtitle="Edit free salvation content." /><AdminInput label="Content key" value={salvationForm.key} onChange={value => setSalvationForm({ ...salvationForm, key: value })} /><AdminText label="Content EN" value={salvationForm.contentEn} onChange={value => setSalvationForm({ ...salvationForm, contentEn: value })} /><AdminText label="Content FR" value={salvationForm.contentFr} onChange={value => setSalvationForm({ ...salvationForm, contentFr: value })} /><button className="button primary full" disabled={!salvationForm.key || !salvationForm.contentEn} onClick={() => run("Salvation content saved.", () => api(`/admin/salvation/${encodeURIComponent(salvationForm.key)}`, { method: "PATCH", body: JSON.stringify({ contentEn: salvationForm.contentEn, contentFr: salvationForm.contentFr }) }, token))}>Save salvation content</button></Panel>
+      <Panel><SectionTitle title="Current salvation content" subtitle="Intro, prayer, verses, and guide steps." /><AdminContentList items={salvation.map(item => ({ ...item, titleEn: item.key, contentEn: item.contentEn, isVisible: true }))} /></Panel>
+      <Panel><SectionTitle title="Saved prayer dates" subtitle="Users who prayed the Prayer of Salvation." /><AdminUserList users={salvationUsers} empty="No salvation records yet." /></Panel>
+    </div>}
+
+    {section === "analytics" && <div className="admin-section-grid">
+      <AdminModule title="Key statistics" body="Live platform totals." items={[`Registered users: ${stats.totalUsers ?? 0}`, `Daily active users: ${stats.dailyActiveUsers ?? 0}`, `Answered prayers: ${stats.answeredPrayers ?? "Demo"}`, `Conversion rate: ${stats.conversionRate ?? 0}%`]} />
+      <AdminModule title="Most used moods" body="From completed prayer records." items={(stats.topMoods || []).map((item: any) => `${item.mood}: ${item.count}`)} />
+      <AdminModule title="Feature popularity" body="Tracked from backend records." items={[`Prayers: ${stats.totalPrayers ?? 0}`, `Journal entries: ${stats.totalJournal ?? 0}`, `Daily goals: ${stats.totalGoals ?? 0}`, `Salvation prayers: ${stats.salvationUsers ?? 0}`]} />
+    </div>}
+
+    {section === "subscriptions" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="Subscription management" subtitle="Upgrade or downgrade users manually." /><AdminUserList users={users} actions={(user) => <button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button>} /></Panel>
+      <AdminModule title="Revenue reports" body="Use settings to store Stripe and RevenueCat links or report notes until payment webhooks are connected." items={[`Stripe: ${settingsMap.stripe_dashboard_url || "Not set"}`, `RevenueCat: ${settingsMap.revenuecat_dashboard_url || "Not set"}`, `Monthly note: ${settingsMap.monthly_revenue_note || "Not set"}`]} />
+      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+    </div>}
+
+    {section === "communication" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="Broadcast message" subtitle="Send a prayer email to verified opted-in users." /><AdminText label="Prayer message" value={broadcastForm.prayer} onChange={value => setBroadcastForm({ ...broadcastForm, prayer: value })} /><AdminInput label="Verse" value={broadcastForm.verse} onChange={value => setBroadcastForm({ ...broadcastForm, verse: value })} /><AdminInput label="Reference" value={broadcastForm.ref} onChange={value => setBroadcastForm({ ...broadcastForm, ref: value })} /><AdminInput label="Action step" value={broadcastForm.action} onChange={value => setBroadcastForm({ ...broadcastForm, action: value })} /><button className="button primary full" onClick={() => run("Broadcast sent.", () => api("/admin/email/broadcast", { method: "POST", body: JSON.stringify({ prayer: { mood: "announcement", prayer: broadcastForm.prayer, verse: broadcastForm.verse, ref: broadcastForm.ref, action: broadcastForm.action } }) }, token))}>Send broadcast</button><button className="button secondary full" onClick={() => run("Test email sent.", () => api("/admin/email/test", { method: "POST" }, token))}>Send test email</button></Panel>
+      <Panel><SectionTitle title="Reminder messages" subtitle="Edit default prayer reminder copy." /><QuickSettings keys={["daily_reminder_en", "daily_reminder_fr", "weekly_reminder_en", "weekly_reminder_fr", "notification_event_message"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <AdminModule title="Push notifications" body="Message copy and schedules can be managed here. Actual phone push delivery requires device-token storage and FCM/APNs credentials on the backend." items={["Daily reminder copy", "Weekly reminder copy", "One-time announcement copy"]} />
+    </div>}
+
+    {section === "settings" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="App settings" subtitle="Safety, language defaults, welcome page, and feature visibility." /><AdminInput label="Setting key" value={settingForm.key} onChange={value => setSettingForm({ ...settingForm, key: value })} /><AdminText label="Value" value={settingForm.value} onChange={value => setSettingForm({ ...settingForm, value })} /><button className="button primary full" disabled={!settingForm.key} onClick={() => saveSetting(settingForm.key, settingForm.value)}>Save setting</button></Panel>
+      <Panel><SectionTitle title="Quick settings" subtitle="Common app customization values." /><QuickSettings keys={["default_language", "safety_disclaimer_en", "safety_disclaimer_fr", "logged_out_welcome_en", "logged_out_welcome_fr", "feature_wellness_visible", "feature_salvation_visible"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <Panel><SectionTitle title="All settings" subtitle="Stored key-value configuration." /><div className="admin-list">{settings.map(item => <div className="admin-row" key={item.key}><b>{item.key}</b><p>{item.value}</p></div>)}</div></Panel>
+    </div>}
+
+    {section === "ai" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="AI knowledge base" subtitle="Update FAQs and support answers used by the agent." /><AdminInput label="Category" value={knowledgeForm.category} onChange={value => setKnowledgeForm({ ...knowledgeForm, category: value })} /><AdminText label="Question" value={knowledgeForm.question} onChange={value => setKnowledgeForm({ ...knowledgeForm, question: value })} /><AdminText label="Answer EN" value={knowledgeForm.answerEn} onChange={value => setKnowledgeForm({ ...knowledgeForm, answerEn: value })} /><AdminText label="Answer FR" value={knowledgeForm.answerFr} onChange={value => setKnowledgeForm({ ...knowledgeForm, answerFr: value })} /><Toggle label="Active" checked={knowledgeForm.isActive} onChange={value => setKnowledgeForm({ ...knowledgeForm, isActive: value })} /><button className="button primary full" disabled={!knowledgeForm.question || !knowledgeForm.answerEn} onClick={() => run("Knowledge base item added.", () => api("/admin/ai/knowledge", { method: "POST", body: JSON.stringify(knowledgeForm) }, token))}>Add knowledge</button></Panel>
+      <Panel><SectionTitle title="Support conversations" subtitle="Recent ReviveSpring AI support messages." /><div className="admin-list">{conversations.map(item => <div className="admin-row" key={item.id}><b>{item.userEmail || item.sessionId}</b><p>{Array.isArray(item.messages) && item.messages.length ? item.messages[item.messages.length - 1].content : "No messages"}</p><small>{new Date(item.updatedAt).toLocaleString()}</small></div>)}</div></Panel>
+      <Panel><SectionTitle title="Knowledge records" subtitle="Current agent training notes." /><AdminContentList items={knowledge.map(item => ({ ...item, titleEn: item.question, contentEn: item.answerEn, isVisible: item.isActive }))} onToggle={(item) => run("Knowledge status updated.", () => api(`/admin/ai/knowledge/${item.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !item.isActive }) }, token))} onDelete={(item) => run("Knowledge deleted.", () => api(`/admin/ai/knowledge/${item.id}`, { method: "DELETE" }, token))} /></Panel>
+    </div>}
+
+    {section === "store" && <div className="admin-section-grid">
+      <Panel><SectionTitle title="App Store and Google Play" subtitle="Edit descriptions and keywords in English and French." /><QuickSettings keys={["app_store_description_en", "app_store_description_fr", "play_store_description_en", "play_store_description_fr", "store_keywords_en", "store_keywords_fr", "seo_title", "seo_description"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <AdminModule title="Listing checklist" body="These values are saved in the backend for your publishing workflow." items={["English descriptions", "French descriptions", "Keywords", "SEO title and description"]} />
+    </div>}
+  </div>;
+}
+
+function AdminModule({ title, body, items }: { title: string; body: string; items: string[] }) {
+  return <Panel><SectionTitle title={title} subtitle={body} /><div className="admin-list">{items.length ? items.map(item => <p className="admin-check" key={item}>{item}</p>) : <p>No records yet.</p>}</div></Panel>;
+}
+
+function AdminInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="field admin-field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} /></label>;
+}
+
+function AdminText({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="field admin-field"><span>{label}</span><textarea value={value} onChange={e => onChange(e.target.value)} /></label>;
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return <label className="switch-row admin-toggle"><b>{label}</b><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} /></label>;
+}
+
+function AdminUserList({ users, actions, empty = "No users found." }: { users: any[]; actions?: (user: any) => React.ReactNode; empty?: string }) {
+  if (!users.length) return <p>{empty}</p>;
+  return <div className="admin-list">{users.map(user => <div className="admin-row user" key={user.id}><div><b>{user.fullName || "Friend"}</b><p>{user.email}</p><small>{user.language || "en"} / {new Date(user.createdAt).toLocaleDateString()} / {user.isEmailVerified ? "verified" : "unverified"}{user.salvationPrayedAt ? ` / salvation ${new Date(user.salvationPrayedAt).toLocaleDateString()}` : ""}</small></div><span className="admin-pill">{user.subscriptionStatus || "free"}</span>{actions && <div className="admin-actions">{actions(user)}</div>}</div>)}</div>;
+}
+
+function AdminContentList({ items, onToggle, onDelete }: { items: any[]; onToggle?: (item: any) => void; onDelete?: (item: any) => void }) {
+  if (!items.length) return <p>No content records yet.</p>;
+  return <div className="admin-list">{items.slice(0, 12).map(item => <div className="admin-row" key={item.id || item.key}><div><b>{item.titleEn || item.key || item.question}</b><p>{item.contentEn || item.prayerEn || item.answerEn || item.verseEn}</p><small>{item.category || item.verseRef || item.reference || "general"} / {item.isPremium ? "premium" : "free"} / {item.isVisible === false ? "hidden" : "visible"}</small></div><div className="admin-actions">{onToggle && <button onClick={() => onToggle(item)}>{item.isVisible === false || item.isActive === false ? "Show" : "Hide"}</button>}{onDelete && <button className="danger" onClick={() => onDelete(item)}>Delete</button>}</div></div>)}</div>;
+}
+
+function QuickSettings({ keys, settings, onSave }: { keys: string[]; settings: Record<string, string>; onSave: (key: string, value: string) => void }) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  return <div className="admin-list">{keys.map(key => {
+    const value = drafts[key] ?? settings[key] ?? "";
+    return <div className="admin-row setting" key={key}><label className="field"><span>{key}</span><textarea value={value} onChange={e => setDrafts({ ...drafts, [key]: e.target.value })} /></label><button className="button secondary" onClick={() => onSave(key, value)}>Save</button></div>;
+  })}</div>;
+}
+
 function AdminScreen({ token, goals, entries }: { token:string; goals: Goal[]; entries: JournalEntry[] }) { const[goalTitle,setGoalTitle]=useState("");const[goalContent,setGoalContent]=useState("");const[prayerTitle,setPrayerTitle]=useState("");const[prayerText,setPrayerText]=useState("");const[verse,setVerse]=useState("");const[reference,setReference]=useState("");const[notice,setNotice]=useState("");const[stats,setStats]=useState<any>({});const[users,setUsers]=useState<any[]>([]);useEffect(()=>{api<any>("/admin/stats",{},token).then(setStats).catch(()=>{});api<any>("/admin/users?limit=10",{},token).then(data=>setUsers(data.users||[])).catch(()=>{});},[token,notice]);const addGoal=async()=>{await api("/admin/goals",{method:"POST",body:JSON.stringify({titleEn:goalTitle,contentEn:goalContent,kind:"scripture",durationSeconds:10})},token);setGoalTitle("");setGoalContent("");setNotice("Daily goal template added.")};const addPrayer=async()=>{await api("/admin/library",{method:"POST",body:JSON.stringify({category:"guided",titleEn:prayerTitle,prayerEn:prayerText})},token);setPrayerTitle("");setPrayerText("");setNotice("Prayer added to rotation.")};const addVerse=async()=>{await api("/admin/verse",{method:"POST",body:JSON.stringify({verseEn:verse,reference})},token);setVerse("");setReference("");setNotice("Daily verse added to the rotation.")};return <><PageIntro title="Admin Management" subtitle="Dedicated backend and database control center." /><div className="metric-grid admin"><Stat value={`${stats.totalUsers ?? "--"}`} label="Users" /><Stat value={`${stats.totalPrayers ?? entries.length}`} label="Prayers" /><Stat value={`${stats.totalGoals ?? goals.length}`} label="Goals" /><Stat value={`${stats.totalJournal ?? entries.length}`} label="Journal" /></div>{notice&&<p className="admin-notice">{notice}</p>}<Panel><SectionTitle title="Recent users" subtitle="Live records from the database." /> <div className="admin-table">{users.map(user=><p key={user.id}><b>{user.fullName||"Friend"}</b><span>{user.email}</span><small>{user.role} / {user.subscriptionStatus}</small></p>)}</div></Panel><div className="admin-editor-grid"><Panel><SectionTitle title="Add daily goal" subtitle="Assigned when users open today's goals."/><div className="form-stack"><input value={goalTitle} onChange={e=>setGoalTitle(e.target.value)} placeholder="Goal title"/><textarea value={goalContent} onChange={e=>setGoalContent(e.target.value)} placeholder="Bible passage or activity instructions"/><button disabled={!goalTitle.trim()} className="button primary" onClick={addGoal}>Add daily goal</button></div></Panel><Panel><SectionTitle title="Add rotating prayer" subtitle="Shown in a fresh order on the Pray screen."/><div className="form-stack"><input value={prayerTitle} onChange={e=>setPrayerTitle(e.target.value)} placeholder="Prayer title"/><textarea value={prayerText} onChange={e=>setPrayerText(e.target.value)} placeholder="Prayer text"/><button disabled={!prayerTitle.trim()||!prayerText.trim()} className="button primary" onClick={addPrayer}>Add prayer</button></div></Panel><Panel><SectionTitle title="Add daily verse" subtitle="Rotates automatically when no date is specified."/><div className="form-stack"><textarea value={verse} onChange={e=>setVerse(e.target.value)} placeholder="Bible verse"/><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Reference"/><button disabled={!verse.trim()||!reference.trim()} className="button primary" onClick={addVerse}>Add verse</button></div></Panel></div></>; }
 
 function PageIntro({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) { return <header className="page-intro"><div><p className="eyebrow">ReviveSpring</p><h2>{title}</h2><p>{subtitle}</p></div>{action}</header>; }
