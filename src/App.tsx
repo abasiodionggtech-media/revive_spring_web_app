@@ -165,19 +165,19 @@ function mapGoal(raw: any): Goal {
 }
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
 const NAV_ITEMS: { id: AppTab; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: "âŒ‚" },
-  { id: "prayers", label: "Pray", icon: "â™¡" },
-  { id: "journal", label: "Journal", icon: "âœŽ" },
-  { id: "goals", label: "Goals", icon: "âš‘" },
-  { id: "wellness", label: "Wellness", icon: "âœ¿" },
-  { id: "ai", label: "AI Companion", icon: "âœ¦" },
-  { id: "profile", label: "Profile", icon: "â—‹" },
+  { id: "home", label: "Home", icon: "H" },
+  { id: "prayers", label: "Pray", icon: "P" },
+  { id: "journal", label: "Journal", icon: "J" },
+  { id: "goals", label: "Goals", icon: "G" },
+  { id: "wellness", label: "Wellness", icon: "W" },
+  { id: "ai", label: "AI Companion", icon: "A" },
+  { id: "profile", label: "Profile", icon: "U" },
 ];
 const PRAYER_LIBRARY = [
-  { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: "â˜€", tone: "emerald" },
-  { title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: "â‰ˆ", tone: "lime" },
-  { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: "+", tone: "green" },
-  { title: "Family", body: "Cover the people I love with unity and grace.", icon: "â™¡", tone: "coral" },
+  { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: "M", tone: "emerald" },
+  { title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: "A", tone: "lime" },
+  { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: "H", tone: "green" },
+  { title: "Family", body: "Cover the people I love with unity and grace.", icon: "F", tone: "coral" },
 ];
 const MOODS = ["Anxious", "Financial stress", "Sad", "Confused", "Grateful", "Healing", "Need a job", "Protection", "Need peace", "Lonely", "Overwhelmed", "Tired", "Hopeful", "Joyful", "Tempted", "Discouraged", "Seeking wisdom", "Family concern"];
 const CHART_NAMES = ["Naomi", "Micah", "Esther", "Daniel", "Grace", "Elias", "Hannah", "Caleb", "Abigail", "Josiah"];
@@ -267,7 +267,7 @@ function SplashPage({ nextPath }: { nextPath: string }) {
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">âœ¦</span><span><b>ReviveSpring</b>{!compact && <small>Faith for every day</small>}</span></div>;
+  return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">RS</span><span><b>ReviveSpring</b>{!compact && <small>Faith for every day</small>}</span></div>;
 }
 
 function UserAvatar({ user, className = "" }: { user: User; className?: string }) {
@@ -393,7 +393,7 @@ function ReminderSetupCard({ value, onChange }: { value: ReminderSettings; onCha
   const setPeriod = (period: "AM" | "PM") => onChange({ ...value, hour: to24Hour(hourView.hour, period) });
 
   return <div className="reminder-card reminder-setup">
-    <span className="large-icon">â—·</span>
+    <span className="large-icon">L</span>
     <div className="reminder-time-display">{formatReminderTime(value.hour, value.minute)}</div>
     <div className="reminder-wheel-grid">
       <ScrollPicker label="Hour" values={REMINDER_HOURS} selected={hourView.hour} format={(item) => String(item).padStart(2, "0")} onSelect={setHour12} />
@@ -435,7 +435,7 @@ function LanguagePage({ current, onSelect }: { current: Lang | null; onSelect: (
           <span className="language-icon">{lang === "en" ? "EN" : "FR"}</span><b>{LANG_LABELS[lang]}</b><small>{lang === "en" ? "Continue in English" : "Continuer en francais"}</small>
         </button>)}
       </div>
-      <button className="button primary full" disabled={!current} onClick={() => navigate("/auth")}>Continue <span>â†’</span></button>
+      <button className="button primary full" disabled={!current} onClick={() => navigate("/auth")}>Continue <span>{"->"}</span></button>
     </div>
   </PublicShell>;
 }
@@ -502,7 +502,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
       {signup && <Field label="Full name" value={name} onChange={setName} placeholder="Your full name" />}
       <Field label="Email address" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
       <Field label="Password" value={password} onChange={setPassword} placeholder="At least 6 characters" type="password" />
-      <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? "Please wait..." : signup ? "Create account" : "Sign in"} <span>â†’</span></button>
+      <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? "Please wait..." : signup ? "Create account" : "Sign in"} <span>{"->"}</span></button>
     </form>
     {GOOGLE_CLIENT_ID ? <div className="google-button" ref={googleButton} /> : <p className="form-error">Set VITE_GOOGLE_CLIENT_ID to enable Google Sign-In on the web.</p>}
     <button className="link-button" onClick={() => setSignup(!signup)}>{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
@@ -513,11 +513,11 @@ function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) =>
   const [code, setCode] = useState(""); const [error, setError] = useState(""); const navigate = useNavigate();
   const pending = sessionStorage.getItem("rs_pending_email");
   if (!pending) return <Navigate to="/auth" replace />;
-  return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">âœ‰</div><p className="kicker">One last step</p><h1>Verify your email</h1>
+  return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">MAIL</div><p className="kicker">One last step</p><h1>Verify your email</h1>
     <p className="lead">Enter the 6-digit code sent to your inbox. For this preview, any six digits will work.</p>
     <Field label="Verification code" value={code} onChange={setCode} placeholder="000000" />
     {error && <p className="form-error">{error}</p>}
-    <button className="button primary full" disabled={code.length !== 6} onClick={async () => { try { const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); onVerified(mapUser(data.user), data.token); sessionStorage.removeItem("rs_pending_email"); navigate("/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } }}>Verify and continue <span>â†’</span></button>
+    <button className="button primary full" disabled={code.length !== 6} onClick={async () => { try { const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); onVerified(mapUser(data.user), data.token); sessionStorage.removeItem("rs_pending_email"); navigate("/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } }}>Verify and continue <span>{"->"}</span></button>
   </div></PublicShell>;
 }
 
@@ -572,26 +572,26 @@ function OnboardingPage({ language, token, user, onComplete }: { language:Lang; 
 
   return <main className={`onboarding-shell ${commitFxActive ? "commit-transitioning" : ""}`.trim()}>
     {commitFxOrigin && <div className={`commit-burst ${commitFxActive ? "active" : ""}`} style={{ left: `${commitFxOrigin.x}px`, top: `${commitFxOrigin.y}px` }} />}
-    <header className="onboarding-header"><Brand compact /><div className="onboarding-progress"><div><span>About you</span><b>{index + 1} / {ONBOARDING.length}</b></div><div className="progress"><i style={{ width: `${((index + 1) / ONBOARDING.length) * 100}%` }} /></div></div><button className="icon-button" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive} title="Previous step">â†</button></header>
+    <header className="onboarding-header"><Brand compact /><div className="onboarding-progress"><div><span>About you</span><b>{index + 1} / {ONBOARDING.length}</b></div><div className="progress"><i style={{ width: `${((index + 1) / ONBOARDING.length) * 100}%` }} /></div></div><button className="icon-button" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive} title="Previous step">{"<-"}</button></header>
     <section className="onboarding-content"><div className="onboarding-stage" key={slide.id}><p className="kicker">Your personal path</p><h1>{slide.title}</h1>{slide.body && <p className="onboarding-lead">{slide.body}</p>}<div className="onboarding-stage-body"><SlideContent slide={slide} selected={selected} select={select} committed={committed} setCommitted={setCommitted} reminderSettings={reminderSettings} setReminderSettings={setReminderSettings} onCommitTap={commitWithAnimation} /></div></div></section>
-    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive}>Back</button><button className="button primary" disabled={!canContinue || commitFxActive} onClick={async () => { if (index === ONBOARDING.length - 1) { await completeOnboarding(); } else setIndex(index + 1); }}>{index === ONBOARDING.length - 1 ? "Enter ReviveSpring" : "Continue"} <span>â†’</span></button></footer>
+    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive}>Back</button><button className="button primary" disabled={!canContinue || commitFxActive} onClick={async () => { if (index === ONBOARDING.length - 1) { await completeOnboarding(); } else setIndex(index + 1); }}>{index === ONBOARDING.length - 1 ? "Enter ReviveSpring" : "Continue"} <span>{"->"}</span></button></footer>
   </main>;
 }
 
 function SlideContent({ slide, selected, select, committed, setCommitted, reminderSettings, setReminderSettings, onCommitTap }: { slide: Slide; selected: string[]; select: (value: string) => void; committed: boolean; setCommitted: (value: boolean) => void; reminderSettings: ReminderSettings; setReminderSettings: (value: ReminderSettings) => void; onCommitTap: (origin: { x: number; y: number }) => void }) {
   if (slide.kind === "chart") return <OnboardingChartCard />;
   if (slide.kind === "reminder") return <ReminderSetupCard value={reminderSettings} onChange={setReminderSettings} />;
-  if (slide.kind === "commit") return <div className="commit-card"><p>A few moments each day with God's Word.<br />A safe space to reflect and recharge.</p><button className={`commit-button ${committed ? "done" : ""}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setCommitted(true); onCommitTap({ x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) }); }}>{committed ? "âœ“" : "â˜"}</button><b>{committed ? "Committed" : "Tap to commit"}</b></div>;
+  if (slide.kind === "commit") return <div className="commit-card"><p>A few moments each day with God's Word.<br />A safe space to reflect and recharge.</p><button className={`commit-button ${committed ? "done" : ""}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setCommitted(true); onCommitTap({ x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) }); }}>{committed ? "OK" : "GO"}</button><b>{committed ? "Committed" : "Tap to commit"}</b></div>;
   if (slide.kind === "builder") return <div className="builder-card"><span>Personalizing your path</span><div className="progress"><i style={{ width: "72%" }} /></div><h3>{slide.statement}</h3><AnimatedOptionGrid options={slide.options || []} selected={selected} select={select} /></div>;
   if (slide.kind === "statement") return <div><blockquote>{slide.statement}</blockquote><AnimatedOptionGrid options={slide.options || []} selected={selected} select={select} /></div>;
   if (slide.options) return <AnimatedOptionGrid options={slide.options} selected={selected} select={select} multi={slide.kind === "multi"} />;
-  return <div className="story-grid"><article><b>Carol</b><span>â˜…â˜…â˜…â˜…â˜…</span><p>"I wake up filled with joy and purpose."</p></article><article><b>Alex</b><span>â˜…â˜…â˜…â˜…â˜…</span><p>"This has helped me build a real relationship with God."</p></article><article><b>Mike</b><span>â˜…â˜…â˜…â˜…â˜…</span><p>"Spiritual growth now feels possible each day."</p></article></div>;
+  return <div className="story-grid"><article><b>Carol</b><span>*****</span><p>"I wake up filled with joy and purpose."</p></article><article><b>Alex</b><span>*****</span><p>"This has helped me build a real relationship with God."</p></article><article><b>Mike</b><span>*****</span><p>"Spiritual growth now feels possible each day."</p></article></div>;
 }
 function OptionGrid({ options, selected, select, multi }: { options: string[]; selected: string[]; select: (value: string) => void; multi?: boolean }) {
-  return <div className="option-grid">{options.map(option => <button key={option} className={selected.includes(option) ? "selected" : ""} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "âœ“" : multi ? "â–¡" : "â—‹"}</i></button>)}</div>;
+  return <div className="option-grid">{options.map(option => <button key={option} className={selected.includes(option) ? "selected" : ""} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "OK" : multi ? "[ ]" : "( )"}</i></button>)}</div>;
 }
 function AnimatedOptionGrid({ options, selected, select, multi }: { options: string[]; selected: string[]; select: (value: string) => void; multi?: boolean }) {
-  return <div className="option-grid">{options.map((option, index) => <button key={option} className={`onboarding-option ${selected.includes(option) ? "selected" : ""}`.trim()} style={{ "--enter-delay": `${220 + (index * 90)}ms` } as CSSProperties} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "Ã¢Å“â€œ" : multi ? "Ã¢â€“Â¡" : "Ã¢â€”â€¹"}</i></button>)}</div>;
+  return <div className="option-grid">{options.map((option, index) => <button key={option} className={`onboarding-option ${selected.includes(option) ? "selected" : ""}`.trim()} style={{ "--enter-delay": `${220 + (index * 90)}ms` } as CSSProperties} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "OK" : multi ? "[ ]" : "( )"}</i></button>)}</div>;
 }
 
 function MainApp({ user, token, signOut, updateUser, language }: { user: User; token: string; signOut: () => void; updateUser: (user: User | null) => void; language: Lang }) {
@@ -608,7 +608,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     ]);
     setGoals(goalData.map(mapGoal)); setJournal(journalData.map(item => ({ id:item.id, body:item.content, date:item.created_date || "Today" })));
     setAnalytics(analyticsData); setVerse(verseData);
-    if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, title:item.titleEn, body:item.prayerEn, icon:"â™¡", tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
+    if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, title:item.titleEn, body:item.prayerEn, icon:"P", tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
   };
   useEffect(() => {
     api<any>("/auth/me", {}, token).then((currentUser) => {
@@ -616,7 +616,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
       return refresh();
     }).catch(signOut);
   }, []);
-  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: "âš™" }] : NAV_ITEMS;
+  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: "D" }] : NAV_ITEMS;
   const title = navItems.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></header>
@@ -643,23 +643,23 @@ function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayer
   }, []);
   const activeQuote = ROTATING_QUOTES[quote];
   const firstName = (user.fullName || "Friend").trim().split(" ")[0] || "Friend";
-  return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {firstName}</h2></div><button className="button primary" onClick={openAi}>âœ¦ Ask AI Companion</button></section>
+  return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {firstName}</h2></div><button className="button primary" onClick={openAi}>Ask AI Companion</button></section>
     <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>Verse of the day</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => <button onClick={() => setMood(x)} key={x}><span>{moodIcon(x)}</span>{x}</button>)}</div></section></div>
-      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "âœ“" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
+      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
 }
-function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>âœ¦ Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={p.id || p.title} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
+function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={p.id || p.title} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
 function JournalScreen({ token, entries, setEntries }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void }) {
   const [text, setText] = useState(""); return <><PageIntro title="Prayer Journal" subtitle="Record requests, make room for reflection, and celebrate answers." /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder="What are you carrying today?" /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>+ Add entry</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
 }
 function GoalsScreen({ token, goals, refresh }: { token:string; goals: Goal[]; refresh:()=>Promise<void> }) {
   const [active,setActive]=useState<Goal|null>(null);
-  return <><PageIntro title="Daily Goals" subtitle="Open each assigned activity and complete the faithful step." /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"âœ“":"â—‹"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
+  return <><PageIntro title="Daily Goals" subtitle="Open each assigned activity and complete the faithful step." /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"OK":"o"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
 }
 function WellnessScreen({ token }: { token: string }) {
   const [wellness, setWellness] = useState<Wellness>({});
   useEffect(() => { api<Wellness>("/onboarding/wellness", {}, token).then(setWellness).catch(() => setWellness({})); }, [token]);
   const pillar = (key: string) => wellness.pillars?.[key]?.score ?? 0;
-  return <><PageIntro title="Spiritual Wellness" subtitle="AI-guided faith health from onboarding and daily progress." /><div className="wellness-grid"><Panel className="score-panel"><div className="score-ring" style={{ background: `conic-gradient(var(--emerald) 0 ${wellness.overall ?? 0}%,#e8f1ee ${wellness.overall ?? 0}% 100%)` }}><span>{wellness.overall ?? 0}%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>{wellness.insight ?? "Your score updates as you pray, journal, complete goals, and build consistency."}</p></div></Panel><div className="metric-grid"><Stat value={`${pillar("goals")}%`} label="Scripture Awareness" /><Stat value={`${pillar("prayer")}%`} label="Peace" /><Stat value={`${pillar("journal")}%`} label="Rest" /></div></div><PrayerTile title="Guided Affirmation" body="I am loved, held, restored, and strengthened for today." icon="â™¡" tone="green" /></>;
+  return <><PageIntro title="Spiritual Wellness" subtitle="AI-guided faith health from onboarding and daily progress." /><div className="wellness-grid"><Panel className="score-panel"><div className="score-ring" style={{ background: `conic-gradient(var(--emerald) 0 ${wellness.overall ?? 0}%,#e8f1ee ${wellness.overall ?? 0}% 100%)` }}><span>{wellness.overall ?? 0}%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>{wellness.insight ?? "Your score updates as you pray, journal, complete goals, and build consistency."}</p></div></Panel><div className="metric-grid"><Stat value={`${pillar("goals")}%`} label="Scripture Awareness" /><Stat value={`${pillar("prayer")}%`} label="Peace" /><Stat value={`${pillar("journal")}%`} label="Rest" /></div></div><PrayerTile title="Guided Affirmation" body="I am loved, held, restored, and strengthened for today." icon="A" tone="green" /></>;
 }
 function AiScreen({user}:{user:User}) {
   const initialMessage: ChatMessage = { role: "assistant", content: "Hello. I am your Bible and prayer AI. Ask me for a prayer, verse, or encouragement." };
@@ -739,7 +739,7 @@ function AiScreen({user}:{user:User}) {
     }
   };
 
-  return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>New conversation</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} · {item.preview?.slice(0, 24) || "Conversation"}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">Loading previous conversation...</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send</button></div></Panel></>;
+  return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>New conversation</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || "Conversation"}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">Loading previous conversation...</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send</button></div></Panel></>;
 }
 
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
@@ -965,16 +965,26 @@ function PageIntro({ title, subtitle, action }: { title: string; subtitle: strin
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) { return <div className="section-title"><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>; }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section>; }
 function Stat({ value, label, onClick }: { value: string; label: string; onClick?: () => void }) { return <button type="button" className={`stat ${onClick ? "clickable" : ""}`} onClick={onClick}><b>{value}</b><span>{label}</span></button>; }
-function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: string; tone: string; onOpen?:()=>void }) { return <article className="prayer-tile"><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div><button title={`Open ${title}`} onClick={onOpen}>â†’</button></article>; }
+function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: string; tone: string; onOpen?:()=>void }) { return <article className="prayer-tile"><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div><button title={`Open ${title}`} onClick={onOpen}>{">"}</button></article>; }
 function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item={title:`Prayer for ${mood}`,body:"Heavenly Father, quiet my heart and fill me with Your peace. Help me take the next faithful step with courage and grace. Amen.",icon:moodIcon(mood),tone:"lime",mood,verse:"Cast all your anxiety on Him because He cares for you.",reference:"1 Peter 5:7"}; return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
-function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){const required=15;const[seconds,setSeconds]=useState(0);const[recorded,setRecorded]=useState(false);useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);useEffect(()=>{if(seconds>=required&&!recorded){setRecorded(true);api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:seconds})},token).then(refresh)}},[seconds,recorded]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>Ã—</button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p><div className="timer-bar"><i style={{width:`${Math.min(100,(seconds/required)*100)}%`}} /></div><p className="timer-copy">{recorded?"Prayer recorded.":`Stay in this prayer for ${Math.max(0,required-seconds)} more seconds to record it.`}</p></section></div>}
-function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>Ã—</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
+function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){const required=15;const[seconds,setSeconds]=useState(0);const[recorded,setRecorded]=useState(false);useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);useEffect(()=>{if(seconds>=required&&!recorded){setRecorded(true);api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:seconds})},token).then(refresh)}},[seconds,recorded]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p><div className="timer-bar"><i style={{width:`${Math.min(100,(seconds/required)*100)}%`}} /></div><p className="timer-copy">{recorded?"Prayer recorded.":`Stay in this prayer for ${Math.max(0,required-seconds)} more seconds to record it.`}</p></section></div>}
+function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
 function initials(name?: string) {
   const parts = (name || "Friend").trim().split(/\s+/).filter(Boolean);
   return (parts.length ? parts.map(part => part[0]).join("") : "F").slice(0, 2).toUpperCase();
 }
-function moodIcon(mood: string) { return mood === "Grateful" ? "â™¡" : mood === "Healing" ? "+" : mood === "Protection" ? "â—‡" : mood.includes("peace") ? "â˜¼" : mood.includes("job") ? "â–¡" : mood.includes("Financial") ? "$" : mood === "Sad" ? "â‰ˆ" : mood === "Confused" ? "?" : "â˜"; }
+function moodIcon(mood: string) {
+  if (mood === "Grateful") return "G";
+  if (mood === "Healing") return "+";
+  if (mood === "Protection") return "P";
+  if (mood.toLowerCase().includes("peace")) return "PE";
+  if (mood.toLowerCase().includes("job")) return "J";
+  if (mood.includes("Financial")) return "$";
+  if (mood === "Sad") return "S";
+  if (mood === "Confused") return "?";
+  return "*";
+}
 
 
 
