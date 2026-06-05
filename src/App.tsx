@@ -1,6 +1,6 @@
 ﻿import { CSSProperties, Component, FormEvent, useEffect, useRef, useState } from "react";
+import * as React from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Cloud, Compass, DollarSign, Flag, HandHeart, HeartPulse, Home, Mail, Moon, Shield, Sparkles, UserRound } from "lucide-react";
 
 type Lang = "en" | "fr";
 type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
@@ -165,14 +165,31 @@ function mapGoal(raw: any): Goal {
   return { id: raw.id, text: raw.text, done: raw.completed === true, kind: raw.kind, content: raw.content, durationSeconds: raw.duration_seconds || 10 };
 }
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
+
+type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
+
+function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
+  const paths: Record<UiIconName, string[]> = {
+    home: ["M3 10.5 12 3l9 7.5", "M5 9.5V21h14V9.5", "M9 21v-7h6v7"],
+    pray: ["M8 12.5 6.4 10.9a2.2 2.2 0 0 0-3.1 3.1L12 22l8.7-8a2.2 2.2 0 0 0-3.1-3.1L16 12.5", "M12 22V8", "M9 8h6", "M12 3v5"],
+    journal: ["M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2V5Z", "M8 7h6", "M8 11h8", "M8 15h5"],
+    goals: ["M6 21V4", "M6 4h11l-2 4 2 4H6"],
+    wellness: ["M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z", "M8 13h2l1-2 2 4 1-2h2"],
+    ai: ["M12 3l1.4 4.2L18 8.6l-4.2 1.4L12 15l-1.8-5L6 8.6l4.6-1.4L12 3Z", "M5 16l.7 2.1L8 19l-2.3.9L5 22l-.7-2.1L2 19l2.3-.9L5 16Z"],
+    profile: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
+    admin: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "M9 12l2 2 4-4"],
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name].map((path) => <path d={path} key={path} />)}</svg>;
+}
+
 const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
-  { id: "home", label: "Home", icon: <Home size={16} /> },
-  { id: "prayers", label: "Pray", icon: <HandHeart size={16} /> },
-  { id: "journal", label: "Journal", icon: <Compass size={16} /> },
-  { id: "goals", label: "Goals", icon: <Flag size={16} /> },
-  { id: "wellness", label: "Wellness", icon: <HeartPulse size={16} /> },
-  { id: "ai", label: "AI Companion", icon: <Sparkles size={16} /> },
-  { id: "profile", label: "Profile", icon: <UserRound size={16} /> },
+  { id: "home", label: "Home", icon: <UiIcon name="home" /> },
+  { id: "prayers", label: "Pray", icon: <UiIcon name="pray" /> },
+  { id: "journal", label: "Journal", icon: <UiIcon name="journal" /> },
+  { id: "goals", label: "Goals", icon: <UiIcon name="goals" /> },
+  { id: "wellness", label: "Wellness", icon: <UiIcon name="wellness" /> },
+  { id: "ai", label: "AI Companion", icon: <UiIcon name="ai" /> },
+  { id: "profile", label: "Profile", icon: <UiIcon name="profile" /> },
 ];
 const PRAYER_LIBRARY = [
   { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: "M", tone: "emerald" },
@@ -617,7 +634,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
       return refresh();
     }).catch(signOut);
   }, []);
-  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <Shield size={16} /> }] : NAV_ITEMS;
+  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <UiIcon name="admin" /> }] : NAV_ITEMS;
   const title = navItems.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></header>
