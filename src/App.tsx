@@ -24,7 +24,7 @@ type Goal = { id: string; text: string; done: boolean; kind?: string; content?: 
 type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
-type PrayerItem = { id?: string; title: string; body: string; icon: string; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
+type PrayerItem = { id?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
@@ -182,6 +182,30 @@ function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name].map((path) => <path d={path} key={path} />)}</svg>;
 }
 
+function MoodIcon({ name, size = 20 }: { name: MoodIconName; size?: number }) {
+  const paths: Record<MoodIconName, string[]> = {
+    breath: ["M4 12h7a3 3 0 1 0-3-3", "M3 16h10a3 3 0 1 1-3 3", "M5 8h2"],
+    coins: ["M12 5c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3Z", "M4 8v4c0 1.7 3.6 3 8 3s8-1.3 8-3V8", "M4 12v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4"],
+    rain: ["M7 17a4 4 0 0 1-.8-7.9A6 6 0 0 1 18 10.5a3.5 3.5 0 0 1-.5 7", "M8 20l1-2", "M12 21l1-3", "M16 20l1-2"],
+    compass: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M15.5 8.5l-2 5-5 2 2-5 5-2Z"],
+    sparkle: ["M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Z", "M5 16l.8 2.2L8 19l-2.2.8L5 22l-.8-2.2L2 19l2.2-.8L5 16Z"],
+    cross: ["M12 4v16", "M7 9h10", "M8 20h8"],
+    briefcase: ["M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2", "M4 7h16v12H4V7Z", "M4 12h16", "M10 12v2h4v-2"],
+    shield: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "M9 12l2 2 4-4"],
+    dove: ["M4 12c4-1 7-4 9-9 1 4-.2 7-3 9", "M10 12c3 1 6 1 10-1-2.5 3.5-6 5-10 5H5", "M5 16l-2 3"],
+    person: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
+    waves: ["M3 8c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2", "M3 14c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2", "M3 20c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2"],
+    moon: ["M20 15.5A8.5 8.5 0 0 1 8.5 4a7 7 0 1 0 11.5 11.5Z"],
+    sunrise: ["M4 18h16", "M6 15a6 6 0 0 1 12 0", "M12 3v4", "M4.2 7.2 7 10", "M19.8 7.2 17 10"],
+    smile: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M8 14s1.5 2 4 2 4-2 4-2", "M9 9h.01", "M15 9h.01"],
+    flame: ["M12 22c4 0 7-2.7 7-6.7 0-3.1-2.2-5.5-4.3-7.3.1 2.1-.8 3.5-2.1 4.4.1-3.2-1.7-6-4.2-8.4.2 3.2-2.4 5.4-3.2 7.6A7.3 7.3 0 0 0 12 22Z"],
+    sprout: ["M12 21V10", "M12 10C8 10 5 7.5 5 4c4 0 7 2.5 7 6Z", "M12 12c4 0 7-2.5 7-6-4 0-7 2.5-7 6Z"],
+    lamp: ["M9 18h6", "M10 22h4", "M8 14h8l-1.3-8H9.3L8 14Z", "M12 2v4"],
+    heart: ["M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"],
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name].map((path) => <path d={path} key={path} />)}</svg>;
+}
+
 const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
   { id: "home", label: "Home", icon: <UiIcon name="home" /> },
   { id: "prayers", label: "Pray", icon: <UiIcon name="pray" /> },
@@ -192,12 +216,125 @@ const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <UiIcon name="profile" /> },
 ];
 const PRAYER_LIBRARY = [
-  { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: "M", tone: "emerald" },
-  { title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: "A", tone: "lime" },
-  { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: "H", tone: "green" },
-  { title: "Family", body: "Cover the people I love with unity and grace.", icon: "F", tone: "coral" },
+  { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: <MoodIcon name="sunrise" />, tone: "emerald" },
+  { title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: <MoodIcon name="breath" />, tone: "sky" },
+  { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: <MoodIcon name="cross" />, tone: "green" },
+  { title: "Family", body: "Cover the people I love with unity and grace.", icon: <MoodIcon name="heart" />, tone: "coral" },
 ];
 const MOODS = ["Anxious", "Financial stress", "Sad", "Confused", "Grateful", "Healing", "Need a job", "Protection", "Need peace", "Lonely", "Overwhelmed", "Tired", "Hopeful", "Joyful", "Tempted", "Discouraged", "Seeking wisdom", "Family concern"];
+type MoodIconName = "breath" | "coins" | "rain" | "compass" | "sparkle" | "cross" | "briefcase" | "shield" | "dove" | "person" | "waves" | "moon" | "sunrise" | "smile" | "flame" | "sprout" | "lamp" | "heart";
+type MoodVerse = { verse: string; reference: string };
+type MoodPrayer = { icon: MoodIconName; tone: string; body: string; action: string; verses: MoodVerse[] };
+const MOOD_PRAYERS: Record<string, MoodPrayer> = {
+  "Anxious": { icon: "breath", tone: "sky", body: "Father, steady my breathing and remind my heart that I am held by You. Replace fear with trust and help me take the next peaceful step.", action: "Pause for three slow breaths and name one thing God is carrying with you.", verses: [
+    { verse: "Cast all your care upon him; for he careth for you.", reference: "1 Peter 5:7" },
+    { verse: "Be careful for nothing; but in every thing by prayer... let your requests be made known unto God.", reference: "Philippians 4:6" },
+    { verse: "Peace I leave with you, my peace I give unto you.", reference: "John 14:27" },
+    { verse: "What time I am afraid, I will trust in thee.", reference: "Psalm 56:3" },
+  ] },
+  "Financial stress": { icon: "coins", tone: "gold", body: "Lord, give me wisdom, discipline, and courage. Open honest doors of provision and keep my worth rooted in Your love.", action: "Write one practical money step you can take today.", verses: [
+    { verse: "My God shall supply all your need according to his riches in glory by Christ Jesus.", reference: "Philippians 4:19" },
+    { verse: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
+    { verse: "Seek ye first the kingdom of God... and all these things shall be added unto you.", reference: "Matthew 6:33" },
+    { verse: "Commit thy works unto the Lord, and thy thoughts shall be established.", reference: "Proverbs 16:3" },
+  ] },
+  "Sad": { icon: "rain", tone: "sky", body: "God of comfort, meet me tenderly. Sit with me in this sadness and let hope rise again, even if it starts small.", action: "Tell God honestly what hurts, without editing your words.", verses: [
+    { verse: "The Lord is nigh unto them that are of a broken heart.", reference: "Psalm 34:18" },
+    { verse: "Blessed are they that mourn: for they shall be comforted.", reference: "Matthew 5:4" },
+    { verse: "Weeping may endure for a night, but joy cometh in the morning.", reference: "Psalm 30:5" },
+    { verse: "He healeth the broken in heart, and bindeth up their wounds.", reference: "Psalm 147:3" },
+  ] },
+  "Confused": { icon: "compass", tone: "emerald", body: "Lord, clear the noise around me. Lead me with wisdom, patience, and a calm mind that can recognize Your direction.", action: "Ask God one clear question, then sit quietly for one minute.", verses: [
+    { verse: "If any of you lack wisdom, let him ask of God.", reference: "James 1:5" },
+    { verse: "Trust in the Lord with all thine heart... and he shall direct thy paths.", reference: "Proverbs 3:5-6" },
+    { verse: "Thy word is a lamp unto my feet, and a light unto my path.", reference: "Psalm 119:105" },
+    { verse: "I will instruct thee and teach thee in the way which thou shalt go.", reference: "Psalm 32:8" },
+  ] },
+  "Grateful": { icon: "sparkle", tone: "gold", body: "Father, thank You for the gifts I can see and the ones I nearly missed. Make gratitude my rhythm today.", action: "Name three blessings out loud, however small.", verses: [
+    { verse: "In every thing give thanks: for this is the will of God.", reference: "1 Thessalonians 5:18" },
+    { verse: "O give thanks unto the Lord; for he is good.", reference: "Psalm 107:1" },
+    { verse: "Every good gift and every perfect gift is from above.", reference: "James 1:17" },
+    { verse: "Bless the Lord, O my soul, and forget not all his benefits.", reference: "Psalm 103:2" },
+  ] },
+  "Healing": { icon: "cross", tone: "leaf", body: "Jesus, bring healing where I am wounded. Restore my body, mind, relationships, and faith with Your gentle power.", action: "Place a hand over the area of pain and pray for restoration.", verses: [
+    { verse: "With his stripes we are healed.", reference: "Isaiah 53:5" },
+    { verse: "I am the Lord that healeth thee.", reference: "Exodus 15:26" },
+    { verse: "Heal me, O Lord, and I shall be healed.", reference: "Jeremiah 17:14" },
+    { verse: "The prayer of faith shall save the sick, and the Lord shall raise him up.", reference: "James 5:15" },
+  ] },
+  "Need a job": { icon: "briefcase", tone: "emerald", body: "Lord, guide my work, applications, interviews, and courage. Open the right door and prepare me to walk through it faithfully.", action: "Choose one job step: apply, follow up, update your CV, or ask for help.", verses: [
+    { verse: "Whatsoever ye do, do it heartily, as to the Lord.", reference: "Colossians 3:23" },
+    { verse: "Let the beauty of the Lord our God be upon us: and establish thou the work of our hands.", reference: "Psalm 90:17" },
+    { verse: "A man's gift maketh room for him.", reference: "Proverbs 18:16" },
+    { verse: "The steps of a good man are ordered by the Lord.", reference: "Psalm 37:23" },
+  ] },
+  "Protection": { icon: "shield", tone: "emerald", body: "Lord, surround me and the people I love. Keep us alert, wise, and covered by Your presence.", action: "Pray protection over your home, travel, and loved ones by name.", verses: [
+    { verse: "The Lord shall preserve thee from all evil.", reference: "Psalm 121:7" },
+    { verse: "He shall give his angels charge over thee, to keep thee in all thy ways.", reference: "Psalm 91:11" },
+    { verse: "The name of the Lord is a strong tower.", reference: "Proverbs 18:10" },
+    { verse: "No weapon that is formed against thee shall prosper.", reference: "Isaiah 54:17" },
+  ] },
+  "Need peace": { icon: "dove", tone: "sky", body: "Prince of Peace, quiet my inner world. Let Your presence settle what pressure has stirred up.", action: "Release one worry to God by writing it in a single sentence.", verses: [
+    { verse: "Thou wilt keep him in perfect peace, whose mind is stayed on thee.", reference: "Isaiah 26:3" },
+    { verse: "The peace of God... shall keep your hearts and minds through Christ Jesus.", reference: "Philippians 4:7" },
+    { verse: "Let the peace of God rule in your hearts.", reference: "Colossians 3:15" },
+    { verse: "The Lord will give strength unto his people; the Lord will bless his people with peace.", reference: "Psalm 29:11" },
+  ] },
+  "Lonely": { icon: "person", tone: "coral", body: "Father, meet me in the quiet places. Remind me that I am seen, known, and never abandoned.", action: "Send one honest message to someone safe, or pray for connection.", verses: [
+    { verse: "I will never leave thee, nor forsake thee.", reference: "Hebrews 13:5" },
+    { verse: "When my father and my mother forsake me, then the Lord will take me up.", reference: "Psalm 27:10" },
+    { verse: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
+    { verse: "I am with you alway, even unto the end of the world.", reference: "Matthew 28:20" },
+  ] },
+  "Overwhelmed": { icon: "waves", tone: "sky", body: "God, help me slow down and carry only what belongs to this moment. Be my strength where I feel stretched thin.", action: "Pick one small next step and leave the rest with God for now.", verses: [
+    { verse: "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", reference: "Matthew 11:28" },
+    { verse: "When my heart is overwhelmed: lead me to the rock that is higher than I.", reference: "Psalm 61:2" },
+    { verse: "God is our refuge and strength, a very present help in trouble.", reference: "Psalm 46:1" },
+    { verse: "My grace is sufficient for thee: for my strength is made perfect in weakness.", reference: "2 Corinthians 12:9" },
+  ] },
+  "Tired": { icon: "moon", tone: "leaf", body: "Lord, restore my strength. Teach me holy rest and renew what exhaustion has drained.", action: "Give yourself permission to rest for ten minutes without guilt.", verses: [
+    { verse: "He giveth power to the faint; and to them that have no might he increaseth strength.", reference: "Isaiah 40:29" },
+    { verse: "They that wait upon the Lord shall renew their strength.", reference: "Isaiah 40:31" },
+    { verse: "I will both lay me down in peace, and sleep: for thou, Lord, only makest me dwell in safety.", reference: "Psalm 4:8" },
+    { verse: "He restoreth my soul.", reference: "Psalm 23:3" },
+  ] },
+  "Hopeful": { icon: "sunrise", tone: "gold", body: "God of new beginnings, grow this hope into steady faith. Help me notice signs of Your goodness today.", action: "Write one reason you believe tomorrow can be different.", verses: [
+    { verse: "Now faith is the substance of things hoped for.", reference: "Hebrews 11:1" },
+    { verse: "For I know the thoughts that I think toward you... to give you an expected end.", reference: "Jeremiah 29:11" },
+    { verse: "Weeping may endure for a night, but joy cometh in the morning.", reference: "Psalm 30:5" },
+    { verse: "The God of hope fill you with all joy and peace in believing.", reference: "Romans 15:13" },
+  ] },
+  "Joyful": { icon: "smile", tone: "gold", body: "Lord, thank You for joy. Let this gladness overflow into kindness, worship, and encouragement for others.", action: "Share one joyful word with someone today.", verses: [
+    { verse: "The joy of the Lord is your strength.", reference: "Nehemiah 8:10" },
+    { verse: "Rejoice in the Lord alway: and again I say, Rejoice.", reference: "Philippians 4:4" },
+    { verse: "This is the day which the Lord hath made; we will rejoice and be glad in it.", reference: "Psalm 118:24" },
+    { verse: "A merry heart doeth good like a medicine.", reference: "Proverbs 17:22" },
+  ] },
+  "Tempted": { icon: "flame", tone: "coral", body: "Jesus, strengthen my will and focus my heart. Show me the way out and help me choose what gives life.", action: "Move away from the trigger and replace it with one healthy action.", verses: [
+    { verse: "God is faithful... but will with the temptation also make a way to escape.", reference: "1 Corinthians 10:13" },
+    { verse: "Submit yourselves therefore to God. Resist the devil, and he will flee from you.", reference: "James 4:7" },
+    { verse: "Watch and pray, that ye enter not into temptation.", reference: "Matthew 26:41" },
+    { verse: "Thy word have I hid in mine heart, that I might not sin against thee.", reference: "Psalm 119:11" },
+  ] },
+  "Discouraged": { icon: "sprout", tone: "leaf", body: "Lord, lift my head again. Help me believe that this hard chapter is not the whole story.", action: "Remember one past moment when God helped you through.", verses: [
+    { verse: "Be strong and of a good courage; be not afraid.", reference: "Joshua 1:9" },
+    { verse: "Let us not be weary in well doing: for in due season we shall reap.", reference: "Galatians 6:9" },
+    { verse: "Why art thou cast down, O my soul? hope thou in God.", reference: "Psalm 42:11" },
+    { verse: "The righteous cry, and the Lord heareth.", reference: "Psalm 34:17" },
+  ] },
+  "Seeking wisdom": { icon: "lamp", tone: "emerald", body: "Father, shape my decisions with truth, humility, and clarity. Help me choose the path that honors You.", action: "List your options and ask which one produces peace, love, and wisdom.", verses: [
+    { verse: "The fear of the Lord is the beginning of wisdom.", reference: "Proverbs 9:10" },
+    { verse: "If any of you lack wisdom, let him ask of God.", reference: "James 1:5" },
+    { verse: "Counsel is mine, and sound wisdom.", reference: "Proverbs 8:14" },
+    { verse: "Teach me thy way, O Lord; I will walk in thy truth.", reference: "Psalm 86:11" },
+  ] },
+  "Family concern": { icon: "heart", tone: "coral", body: "Lord, cover my family with patience, forgiveness, protection, and love. Heal what is strained and strengthen what is good.", action: "Pray for one family member by name and bless them specifically.", verses: [
+    { verse: "As for me and my house, we will serve the Lord.", reference: "Joshua 24:15" },
+    { verse: "Be ye kind one to another, tenderhearted, forgiving one another.", reference: "Ephesians 4:32" },
+    { verse: "Charity suffereth long, and is kind.", reference: "1 Corinthians 13:4" },
+    { verse: "Blessed are the peacemakers: for they shall be called the children of God.", reference: "Matthew 5:9" },
+  ] },
+};
 const CHART_NAMES = ["Naomi", "Micah", "Esther", "Daniel", "Grace", "Elias", "Hannah", "Caleb", "Abigail", "Josiah"];
 const CHART_SERIES = [
   { id: "growth", label: "Spiritual growth", percent: 92, accent: "gold" },
