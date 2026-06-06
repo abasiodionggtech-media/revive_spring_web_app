@@ -522,7 +522,17 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
       <Field label="Password" value={password} onChange={setPassword} placeholder="At least 6 characters" type="password" />
       <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? "Please wait..." : signup ? "Create account" : "Sign in"} <span>{"->"}</span></button>
     </form>
-    {GOOGLE_CLIENT_ID ? <div className="google-button" ref={googleButton} /> : <p className="form-error">Set VITE_GOOGLE_CLIENT_ID to enable Google Sign-In on the web.</p>}
+    <div className="auth-divider"><span>or continue with</span></div>
+    {GOOGLE_CLIENT_ID ? <div className="google-signin-panel">
+      <div className="google-signin-copy">
+        <span className="google-signin-icon">G</span>
+        <div>
+          <b>Google account</b>
+          <p>Use your saved account to continue securely.</p>
+        </div>
+      </div>
+      <div className="google-button" ref={googleButton} />
+    </div> : <p className="form-error">Set VITE_GOOGLE_CLIENT_ID to enable Google Sign-In on the web.</p>}
     <button className="link-button" onClick={() => setSignup(!signup)}>{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
   </div></PublicShell>;
 }
