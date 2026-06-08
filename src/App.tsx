@@ -3,7 +3,7 @@ import * as React from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 type Lang = "en" | "fr";
-type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
+type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "admin";
 type User = {
   fullName: string;
   email: string;
@@ -24,7 +24,7 @@ type Goal = { id: string; text: string; done: boolean; kind?: string; content?: 
 type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
-type PrayerItem = { id?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
+type PrayerItem = { id?: string; identifier?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
@@ -164,9 +164,22 @@ function normalizeUser(raw: any, fallbackLanguage: Lang | null): User | null {
 function mapGoal(raw: any): Goal {
   return { id: raw.id, text: raw.text, done: raw.completed === true, kind: raw.kind, content: raw.content, durationSeconds: raw.duration_seconds || 10 };
 }
+
+function slugify(value: string) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "prayer";
+}
+
+function prayerIdentifier(item: PrayerItem) {
+  return item.identifier || item.id || `generated-${slugify(`${item.mood || "guided"}-${item.title}-${item.reference || ""}`)}`;
+}
+
+function prayerStorageKey(item: PrayerItem) {
+  return `rs_prayer_recorded_${prayerIdentifier(item)}`;
+}
+
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
 
-type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "admin";
+type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "admin";
 
 function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
   const paths: Record<UiIconName, string[]> = {
@@ -177,6 +190,7 @@ function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
     wellness: ["M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z", "M8 13h2l1-2 2 4 1-2h2"],
     ai: ["M12 3l1.4 4.2L18 8.6l-4.2 1.4L12 15l-1.8-5L6 8.6l4.6-1.4L12 3Z", "M5 16l.7 2.1L8 19l-2.3.9L5 22l-.7-2.1L2 19l2.3-.9L5 16Z"],
     profile: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
+    support: ["M21 12.5a8.5 8.5 0 0 1-8.5 8.5 9.3 9.3 0 0 1-3.5-.7L3 21l.8-5.6A8.5 8.5 0 1 1 21 12.5Z", "M8.5 12h.01", "M12 12h.01", "M15.5 12h.01", "M9 16h5"],
     admin: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "M9 12l2 2 4-4"],
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name].map((path) => <path d={path} key={path} />)}</svg>;
@@ -216,10 +230,10 @@ const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <UiIcon name="profile" /> },
 ];
 const PRAYER_LIBRARY = [
-  { title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: <MoodIcon name="sunrise" />, tone: "emerald" },
-  { title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: <MoodIcon name="breath" />, tone: "sky" },
-  { title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: <MoodIcon name="cross" />, tone: "green" },
-  { title: "Family", body: "Cover the people I love with unity and grace.", icon: <MoodIcon name="heart" />, tone: "coral" },
+  { identifier: "library-morning-renewal", title: "Morning Renewal", body: "Lord, align my heart with peace, wisdom, and courage today.", icon: <MoodIcon name="sunrise" />, tone: "emerald" },
+  { identifier: "library-anxiety-support", title: "Anxiety Support", body: "A quiet prayer for calm breathing and steady faith.", icon: <MoodIcon name="breath" />, tone: "sky" },
+  { identifier: "library-healing", title: "Healing", body: "A hopeful prayer for body, mind, and relationships.", icon: <MoodIcon name="cross" />, tone: "green" },
+  { identifier: "library-family", title: "Family", body: "Cover the people I love with unity and grace.", icon: <MoodIcon name="heart" />, tone: "coral" },
 ];
 const MOODS = ["Anxious", "Financial stress", "Sad", "Confused", "Grateful", "Healing", "Need a job", "Protection", "Need peace", "Lonely", "Overwhelmed", "Tired", "Hopeful", "Joyful", "Tempted", "Discouraged", "Seeking wisdom", "Family concern"];
 type MoodIconName = "breath" | "coins" | "rain" | "compass" | "sparkle" | "cross" | "briefcase" | "shield" | "dove" | "person" | "waves" | "moon" | "sunrise" | "smile" | "flame" | "sprout" | "lamp" | "heart";
@@ -773,7 +787,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     ]);
     setGoals(goalData.map(mapGoal)); setJournal(journalData.map(item => ({ id:item.id, body:item.content, date:item.created_date || "Today" })));
     setAnalytics(analyticsData); setVerse(verseData);
-    if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, title:item.titleEn, body:item.prayerEn, icon:<MoodIcon name="heart" />, tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
+    if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, identifier:item.identifier || item.id, title:item.titleEn, body:item.prayerEn, icon:<MoodIcon name="heart" />, tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
   };
   useEffect(() => {
     api<any>("/auth/me", {}, token).then((currentUser) => {
@@ -782,9 +796,9 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     }).catch(signOut);
   }, []);
   const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <UiIcon name="admin" /> }] : NAV_ITEMS;
-  const title = navItems.find(item => item.id === tab)?.label || "Admin";
+  const title = tab === "support" ? "Customer Care" : navItems.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
-    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></header>
+    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title="Open customer care" aria-label="Open customer care"><UiIcon name="support" size={19} /><span>Care</span></button><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></div></header>
       <div className="screen-wrap">
         {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
         {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
@@ -792,6 +806,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
         {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} />}
         {tab === "wellness" && <WellnessScreen token={token} />}
         {tab === "ai" && <AiScreen user={user} />}
+        {tab === "support" && <CustomerCareScreen user={user} />}
         {tab === "profile" && <ProfileScreen user={user} language={language} signOut={signOut} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
         {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
       </div>
@@ -812,7 +827,7 @@ function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayer
     <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>Verse of the day</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
       <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
 }
-function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={p.id || p.title} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
+function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={prayerIdentifier(p)} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
 function JournalScreen({ token, entries, setEntries }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void }) {
   const [text, setText] = useState(""); return <><PageIntro title="Prayer Journal" subtitle="Record requests, make room for reflection, and celebrate answers." /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder="What are you carrying today?" /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>+ Add entry</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
 }
@@ -912,6 +927,23 @@ function AiScreen({user}:{user:User}) {
   };
 
   return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>New conversation</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || "Conversation"}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">Loading previous conversation...</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send</button></div></Panel></>;
+}
+
+function CustomerCareScreen({ user }: { user: User }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: `Hi ${user.fullName.split(" ")[0] || "Friend"}, welcome to ReviveSpring Care. Tell us what you need help with and our team will follow up.` },
+  ]);
+  const [message, setMessage] = useState("");
+  const [sent, setSent] = useState(false);
+  const sendMessage = (event: FormEvent) => {
+    event.preventDefault();
+    const value = message.trim();
+    if (!value) return;
+    setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: "Demo received. In the live version this message will be sent to customer care with your account details." }]);
+    setMessage("");
+    setSent(true);
+  };
+  return <><PageIntro title="Customer Care" subtitle="A calm support space for account, prayer, billing, and app questions." action={<span className="care-status"><i /> Demo desk online</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>We are here to help you keep growing.</h2><p>Drop a message below. This demo keeps the conversation on this screen for now, ready to connect to the backend later.</p></div></Panel><div className="care-quick-list"><article><b>Account help</b><p>Login, Google sign-in, profile, and language settings.</p></article><article><b>Prayer support</b><p>Library, daily prayers, wellness score, and saved records.</p></article><article><b>Billing care</b><p>Premium access, plan questions, and payment follow-up.</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">Support ticket preview created for {user.email}.</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Write your message to customer care..." /><button className="button primary" disabled={!message.trim()}>Send message</button></form></Panel></>;
 }
 
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
@@ -1043,7 +1075,7 @@ function AdminControlCenter({ token }: { token: string }) {
     </div>}
 
     {section === "content" && <div className="admin-section-grid">
-      <Panel><SectionTitle title="Add prayer" subtitle="English and French library content." /><AdminInput label="Category" value={prayerForm.category} onChange={value => setPrayerForm({ ...prayerForm, category: value })} /><AdminInput label="Title EN" value={prayerForm.titleEn} onChange={value => setPrayerForm({ ...prayerForm, titleEn: value })} /><AdminInput label="Title FR" value={prayerForm.titleFr} onChange={value => setPrayerForm({ ...prayerForm, titleFr: value })} /><AdminText label="Prayer EN" value={prayerForm.prayerEn} onChange={value => setPrayerForm({ ...prayerForm, prayerEn: value })} /><AdminText label="Prayer FR" value={prayerForm.prayerFr} onChange={value => setPrayerForm({ ...prayerForm, prayerFr: value })} /><AdminInput label="Verse reference" value={prayerForm.verseRef} onChange={value => setPrayerForm({ ...prayerForm, verseRef: value })} /><AdminInput label="Action step EN" value={prayerForm.actionEn} onChange={value => setPrayerForm({ ...prayerForm, actionEn: value })} /><Toggle label="Premium content" checked={prayerForm.isPremium} onChange={value => setPrayerForm({ ...prayerForm, isPremium: value })} /><button className="button primary full" disabled={!prayerForm.titleEn || !prayerForm.prayerEn} onClick={() => run("Prayer added.", () => api("/admin/library", { method: "POST", body: JSON.stringify(prayerForm) }, token))}>Add prayer</button></Panel>
+      <Panel><SectionTitle title="Add prayer" subtitle="English and French library content. A unique prayer ID is generated automatically when saved." /><AdminInput label="Category" value={prayerForm.category} onChange={value => setPrayerForm({ ...prayerForm, category: value })} /><AdminInput label="Title EN" value={prayerForm.titleEn} onChange={value => setPrayerForm({ ...prayerForm, titleEn: value })} /><AdminInput label="Title FR" value={prayerForm.titleFr} onChange={value => setPrayerForm({ ...prayerForm, titleFr: value })} /><AdminText label="Prayer EN" value={prayerForm.prayerEn} onChange={value => setPrayerForm({ ...prayerForm, prayerEn: value })} /><AdminText label="Prayer FR" value={prayerForm.prayerFr} onChange={value => setPrayerForm({ ...prayerForm, prayerFr: value })} /><AdminInput label="Verse reference" value={prayerForm.verseRef} onChange={value => setPrayerForm({ ...prayerForm, verseRef: value })} /><AdminInput label="Action step EN" value={prayerForm.actionEn} onChange={value => setPrayerForm({ ...prayerForm, actionEn: value })} /><Toggle label="Premium content" checked={prayerForm.isPremium} onChange={value => setPrayerForm({ ...prayerForm, isPremium: value })} /><button className="button primary full" disabled={!prayerForm.titleEn || !prayerForm.prayerEn} onClick={() => run("Prayer added.", () => api("/admin/library", { method: "POST", body: JSON.stringify(prayerForm) }, token))}>Add prayer</button></Panel>
       <Panel><SectionTitle title="Prayer library" subtitle="Edit visibility or remove records." /><AdminContentList items={library} onToggle={(item) => run("Prayer visibility updated.", () => api(`/admin/library/${item.id}`, { method: "PATCH", body: JSON.stringify({ isVisible: !item.isVisible }) }, token))} onDelete={(item) => run("Prayer deleted.", () => api(`/admin/library/${item.id}`, { method: "DELETE" }, token))} /></Panel>
       <Panel><SectionTitle title="Daily verse card" subtitle="Update the home screen verse rotation." /><AdminText label="Verse EN" value={verseForm.verseEn} onChange={value => setVerseForm({ ...verseForm, verseEn: value })} /><AdminText label="Verse FR" value={verseForm.verseFr} onChange={value => setVerseForm({ ...verseForm, verseFr: value })} /><AdminInput label="Reference" value={verseForm.reference} onChange={value => setVerseForm({ ...verseForm, reference: value })} /><AdminInput label="Active date YYYY-MM-DD" value={verseForm.activeOn} onChange={value => setVerseForm({ ...verseForm, activeOn: value })} /><button className="button primary full" disabled={!verseForm.verseEn || !verseForm.reference} onClick={() => run("Daily verse added.", () => api("/admin/verse", { method: "POST", body: JSON.stringify({ ...verseForm, activeOn: verseForm.activeOn || null }) }, token))}>Add verse</button></Panel>
     </div>}
@@ -1137,17 +1169,37 @@ function PageIntro({ title, subtitle, action }: { title: string; subtitle: strin
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) { return <div className="section-title"><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>; }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section>; }
 function Stat({ value, label, onClick }: { value: string; label: string; onClick?: () => void }) { return <button type="button" className={`stat ${onClick ? "clickable" : ""}`} onClick={onClick}><b>{value}</b><span>{label}</span></button>; }
-function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: React.ReactNode; tone: string; onOpen?:()=>void }) { return <article className="prayer-tile"><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div><button title={`Open ${title}`} onClick={onOpen}>{">"}</button></article>; }
+function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: React.ReactNode; tone: string; onOpen?:()=>void }) {
+  return <button type="button" className={`prayer-tile ${onOpen ? "clickable" : "display-only"}`.trim()} onClick={onOpen} aria-label={onOpen ? `Open ${title}` : title}><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div>{onOpen && <span className="prayer-arrow" aria-hidden="true">{">"}</span>}</button>;
+}
 function getMoodPrayer(mood: string) {
   return MOOD_PRAYERS[mood] || MOOD_PRAYERS.Anxious;
 }
 function moodPrayerItem(mood: string): PrayerItem {
   const prayer = getMoodPrayer(mood);
   const selectedVerse = prayer.verses[Math.floor(Math.random() * prayer.verses.length)];
-  return { title: `Prayer for ${mood}`, body: prayer.body, icon: <MoodIcon name={prayer.icon} />, tone: prayer.tone, mood, verse: selectedVerse.verse, reference: selectedVerse.reference, action: prayer.action };
+  return { identifier: `mood-${slugify(mood)}`, title: `Prayer for ${mood}`, body: prayer.body, icon: <MoodIcon name={prayer.icon} />, tone: prayer.tone, mood, verse: selectedVerse.verse, reference: selectedVerse.reference, action: prayer.action };
 }
 function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item=moodPrayerItem(mood); return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
-function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){const required=15;const[seconds,setSeconds]=useState(0);const[recorded,setRecorded]=useState(false);useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);useEffect(()=>{if(seconds>=required&&!recorded){setRecorded(true);api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:seconds})},token).then(refresh)}},[seconds,recorded]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}<div className="timer-bar"><i style={{width:`${Math.min(100,(seconds/required)*100)}%`}} /></div><p className="timer-copy">{recorded?"Prayer recorded.":`Stay in this prayer for ${Math.max(0,required-seconds)} more seconds to record it.`}</p></section></div>}
+function ClosePrayerIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>; }
+function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){
+  const required=15;
+  const[recorded,setRecorded]=useState(()=>{try{return localStorage.getItem(prayerStorageKey(item))==="true"}catch{return false}});
+  useEffect(()=>{
+    if(recorded) return;
+    const key=prayerStorageKey(item);
+    const timer=window.setTimeout(async()=>{
+      try{
+        await api("/prayers/complete",{method:"POST",body:JSON.stringify({mood:item.mood||"guided",prayer_identifier:prayerIdentifier(item),prayer_text:item.body,bible_verse:item.verse,bible_reference:item.reference,action_step:item.action,elapsed_seconds:required})},token);
+        localStorage.setItem(key,"true");
+        setRecorded(true);
+        await refresh();
+      }catch{}
+    },required*1000);
+    return()=>window.clearTimeout(timer);
+  },[item,recorded,refresh,token]);
+  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}<p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"Stay with this prayer quietly. It will be recorded automatically once."}</p></section></div>
+}
 function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
 function initials(name?: string) {
