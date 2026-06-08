@@ -25,3 +25,13 @@
 .ai-history-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}.ai-session-chip{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);font-size:.82rem;font-weight:700}.ai-session-chip.active{background:#e9f3ef;color:var(--emerald);border-color:#b8d2c9}
 .message{font-size:1rem;line-height:1.6;padding:13px 15px}
 .typing{font-size:.92rem}
+.mood-button-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:10px;background:#e8f2ee;color:var(--emerald)}
+.mood-button-icon.sky,.tile-icon.sky{background:#e8f6f6;color:#2d8f9b}
+.mood-button-icon.gold,.tile-icon.gold{background:#fbf5df;color:#a87916}
+.mood-button-icon.leaf,.tile-icon.leaf{background:#edf7e7;color:#527b29}
+.mood-button-icon.coral{background:#fbefec;color:var(--coral)}
+.mood-grid button{min-height:54px;transition:border-color .18s ease,background .18s ease,transform .18s ease,box-shadow .18s ease}
+.mood-grid button:hover{box-shadow:0 12px 26px rgba(14,75,62,.08);transform:translateY(-1px)}
+.tile-icon svg,.mood-button-icon svg{display:block}
+.action-step{display:grid;gap:5px;padding:13px 14px;border:1px solid #dce9e5;border-radius:16px;background:#f6faf8;color:var(--muted);font-size:.9rem}
+.action-step b{color:var(--emerald);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase}
