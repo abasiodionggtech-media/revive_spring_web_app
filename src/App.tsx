@@ -3,7 +3,7 @@ import * as React from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 type Lang = "en" | "fr";
-type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "admin";
+type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "notifications" | "admin";
 type User = {
   fullName: string;
   email: string;
@@ -26,6 +26,8 @@ type ChatMessage = { role: "assistant" | "user"; content: string };
 type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
 type PrayerItem = { id?: string; identifier?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
+type AppNotification = { id: string; type: string; title: string; body: string; readAt?: string | null; createdAt: string; metadata?: Record<string, unknown> };
+type SupportTicket = { id: string; subject: string; status: string; priority?: string; messages: Array<{ role: string; body: string; senderName?: string; senderEmail?: string; createdAt?: string }>; user?: { email?: string; fullName?: string; subscriptionStatus?: string } ; updatedAt?: string; createdAt?: string };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
 type ReminderSettings = {
@@ -179,7 +181,7 @@ function prayerStorageKey(item: PrayerItem) {
 
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
 
-type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "admin";
+type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "notification" | "admin";
 
 function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
   const paths: Record<UiIconName, string[]> = {
@@ -191,6 +193,7 @@ function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
     ai: ["M12 3l1.4 4.2L18 8.6l-4.2 1.4L12 15l-1.8-5L6 8.6l4.6-1.4L12 3Z", "M5 16l.7 2.1L8 19l-2.3.9L5 22l-.7-2.1L2 19l2.3-.9L5 16Z"],
     profile: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
     support: ["M21 12.5a8.5 8.5 0 0 1-8.5 8.5 9.3 9.3 0 0 1-3.5-.7L3 21l.8-5.6A8.5 8.5 0 1 1 21 12.5Z", "M8.5 12h.01", "M12 12h.01", "M15.5 12h.01", "M9 16h5"],
+    notification: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9", "M10 21h4"],
     admin: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "M9 12l2 2 4-4"],
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name].map((path) => <path d={path} key={path} />)}</svg>;
@@ -626,7 +629,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
           if (!response.credential) return;
           setBusy(true); setError("");
           try {
-            const data = await api<any>("/auth/google", { method: "POST", body: JSON.stringify({ id_token: response.credential, language }) });
+            const data = await api<any>("/auth/google", { method: "POST", body: JSON.stringify({ id_token: response.credential, language, client: "web" }) });
             const nextUser = mapUser(data.user);
             onLogin(nextUser, data.token);
             navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
@@ -647,7 +650,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
         await api("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name: name.trim() }) });
         sessionStorage.setItem("rs_pending_email", email); navigate("/verify");
       } else {
-        const data = await api<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+        const data = await api<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password, client: "web" }) });
         const nextUser = mapUser(data.user);
         onLogin(nextUser, data.token);
         navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
@@ -780,6 +783,31 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   const [analytics, setAnalytics] = useState<Analytics>({ totalPrayers:0, visitCount:0, currentStreak:0, answeredPrayers:5, completedGoals:0 });
   const [verse, setVerse] = useState({ verse:"I can do all things through Christ who strengthens me.", reference:"Philippians 4:13" });
   const [library, setLibrary] = useState<PrayerItem[]>(PRAYER_LIBRARY);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationToast, setNotificationToast] = useState<AppNotification | null>(null);
+  const unreadNotifications = notifications.filter(item => !item.readAt).length;
+  const surfaceUnreadNotification = (items: AppNotification[]) => {
+    const latest = items.find(item => !item.readAt);
+    if (!latest) return;
+    const key = `rs_last_web_notification_${user.email}`;
+    if (localStorage.getItem(key) === latest.id) return;
+    localStorage.setItem(key, latest.id);
+    setNotificationToast(latest);
+    window.setTimeout(() => setNotificationToast(current => current?.id === latest.id ? null : current), 9000);
+    if ("Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification(latest.title, { body: latest.body });
+    }
+  };
+  const loadNotifications = async () => {
+    try {
+      const data = await api<any>("/notifications", {}, token);
+      const nextNotifications = data.notifications || [];
+      setNotifications(nextNotifications);
+      surfaceUnreadNotification(nextNotifications);
+    } catch {
+      setNotifications([]);
+    }
+  };
   const refresh = async () => {
     const [goalData, journalData, analyticsData, verseData, libraryData] = await Promise.all([
       api<any[]>("/goals", {}, token), api<any[]>("/journal", {}, token), api<Analytics>("/analytics", {}, token),
@@ -792,13 +820,18 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   useEffect(() => {
     api<any>("/auth/me", {}, token).then((currentUser) => {
       updateUser(mapUser(currentUser));
-      return refresh();
+      return Promise.all([refresh(), loadNotifications()]);
     }).catch(signOut);
   }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => { void loadNotifications(); }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [token]);
   const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <UiIcon name="admin" /> }] : NAV_ITEMS;
-  const title = tab === "support" ? "Customer Care" : navItems.find(item => item.id === tab)?.label || "Admin";
+  const title = tab === "support" ? "Customer Care" : tab === "notifications" ? "Notifications" : navItems.find(item => item.id === tab)?.label || "Admin";
   return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
-    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title="Open customer care" aria-label="Open customer care"><UiIcon name="support" size={19} /><span>Care</span></button><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></div></header>
+    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title="Open notifications" aria-label="Open notifications"><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>Alerts</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title="Open customer care" aria-label="Open customer care"><UiIcon name="support" size={19} /><span>Care</span></button><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></div></header>
+      {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
       <div className="screen-wrap">
         {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
         {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
@@ -806,7 +839,8 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
         {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} />}
         {tab === "wellness" && <WellnessScreen token={token} />}
         {tab === "ai" && <AiScreen user={user} />}
-        {tab === "support" && <CustomerCareScreen user={user} />}
+        {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
+        {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} />}
         {tab === "profile" && <ProfileScreen user={user} language={language} signOut={signOut} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
         {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
       </div>
@@ -929,21 +963,45 @@ function AiScreen({user}:{user:User}) {
   return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>New conversation</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || "Conversation"}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">Loading previous conversation...</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send</button></div></Panel></>;
 }
 
-function CustomerCareScreen({ user }: { user: User }) {
+function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: string; onTicketSent: () => Promise<void> }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "assistant", content: `Hi ${user.fullName.split(" ")[0] || "Friend"}, welcome to ReviveSpring Care. Tell us what you need help with and our team will follow up.` },
   ]);
   const [message, setMessage] = useState("");
+  const [subject, setSubject] = useState("Customer care message");
   const [sent, setSent] = useState(false);
-  const sendMessage = (event: FormEvent) => {
+  const [busy, setBusy] = useState(false);
+  const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
     const value = message.trim();
-    if (!value) return;
-    setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: "Demo received. In the live version this message will be sent to customer care with your account details." }]);
-    setMessage("");
-    setSent(true);
+    if (!value || busy) return;
+    setBusy(true);
+    try {
+      await api<SupportTicket>("/support/tickets", { method: "POST", body: JSON.stringify({ subject, message: value }) }, token);
+      setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: "Message received. Customer care can now view this in the admin dashboard and reply to your account." }]);
+      setMessage("");
+      setSent(true);
+      await onTicketSent();
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : "We could not send this message right now." }]);
+    } finally {
+      setBusy(false);
+    }
   };
-  return <><PageIntro title="Customer Care" subtitle="A calm support space for account, prayer, billing, and app questions." action={<span className="care-status"><i /> Demo desk online</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>We are here to help you keep growing.</h2><p>Drop a message below. This demo keeps the conversation on this screen for now, ready to connect to the backend later.</p></div></Panel><div className="care-quick-list"><article><b>Account help</b><p>Login, Google sign-in, profile, and language settings.</p></article><article><b>Prayer support</b><p>Library, daily prayers, wellness score, and saved records.</p></article><article><b>Billing care</b><p>Premium access, plan questions, and payment follow-up.</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">Support ticket preview created for {user.email}.</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Write your message to customer care..." /><button className="button primary" disabled={!message.trim()}>Send message</button></form></Panel></>;
+  return <><PageIntro title="Customer Care" subtitle="A calm support space for account, prayer, billing, and app questions." action={<span className="care-status"><i /> Support desk online</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>We are here to help you keep growing.</h2><p>Drop a message below. Your account information will be attached so admins can review and reply directly.</p></div></Panel><div className="care-quick-list"><article><b>Account help</b><p>Login, Google sign-in, profile, and language settings.</p></article><article><b>Prayer support</b><p>Library, daily prayers, wellness score, and saved records.</p></article><article><b>Billing care</b><p>Premium access, plan questions, and payment follow-up.</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">Support ticket created for {user.email}.</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><input value={subject} onChange={event => setSubject(event.target.value)} placeholder="Subject" /><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Write your message to customer care..." /><button className="button primary" disabled={!message.trim() || busy}>{busy ? "Sending..." : "Send message"}</button></form></Panel></>;
+}
+
+function NotificationScreen({ token, notifications, refresh }: { token: string; notifications: AppNotification[]; refresh: () => Promise<void> }) {
+  const markAll = async () => {
+    await api("/notifications/read-all", { method: "POST" }, token);
+    await refresh();
+  };
+  const markOne = async (item: AppNotification) => {
+    if (item.readAt) return;
+    await api(`/notifications/${item.id}/read`, { method: "PATCH" }, token);
+    await refresh();
+  };
+  return <><PageIntro title="Notifications" subtitle="Security alerts, customer-care replies, and account updates." action={<button className="button secondary" onClick={markAll}>Mark all read</button>} /><div className="notification-list">{notifications.length ? notifications.map(item => <button className={`notification-card ${item.readAt ? "" : "unread"}`.trim()} key={item.id} onClick={() => markOne(item)}><span className="notification-mark"><UiIcon name={item.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{item.title}</b><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()} {item.readAt ? "/ read" : "/ unread"}</small></div></button>) : <Panel><SectionTitle title="No notifications yet" subtitle="Security alerts and customer care replies will appear here." /></Panel>}</div></>;
 }
 
 function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
@@ -959,6 +1017,7 @@ const ADMIN_SECTIONS = [
   ["analytics", "Analytics"],
   ["subscriptions", "Subscriptions"],
   ["communication", "Notifications"],
+  ["care", "Customer Care"],
   ["settings", "App Settings"],
   ["ai", "AI Support"],
   ["store", "Store Listing"],
@@ -981,6 +1040,8 @@ function AdminControlCenter({ token }: { token: string }) {
   const [salvation, setSalvation] = useState<any[]>([]);
   const [settings, setSettings] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [supportReplies, setSupportReplies] = useState<Record<string, string>>({});
   const [knowledge, setKnowledge] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [prayerForm, setPrayerForm] = useState({ category: "morning", titleEn: "", titleFr: "", verseEn: "", verseFr: "", verseRef: "", prayerEn: "", prayerFr: "", actionEn: "", actionFr: "", isPremium: false, isVisible: true });
@@ -1005,8 +1066,9 @@ function AdminControlCenter({ token }: { token: string }) {
         api<any[]>("/admin/settings", {}, token),
         api<any>("/admin/ai/conversations?limit=10", {}, token),
         api<any[]>("/admin/ai/knowledge", {}, token),
+        api<any>("/admin/support/tickets?limit=50", {}, token),
       ]);
-      const [statsResult, userResult, libraryResult, mentalResult, salvationResult, settingsResult, convoResult, knowledgeResult] = results;
+      const [statsResult, userResult, libraryResult, mentalResult, salvationResult, settingsResult, convoResult, knowledgeResult, supportResult] = results;
 
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
       if (userResult.status === "fulfilled") setUsers(userResult.value.users || []);
@@ -1016,6 +1078,7 @@ function AdminControlCenter({ token }: { token: string }) {
       if (settingsResult.status === "fulfilled") setSettings(settingsResult.value || []);
       if (convoResult.status === "fulfilled") setConversations(convoResult.value.conversations || []);
       if (knowledgeResult.status === "fulfilled") setKnowledge(knowledgeResult.value || []);
+      if (supportResult.status === "fulfilled") setSupportTickets(supportResult.value.tickets || []);
 
       const rejected = results.filter((result) => result.status === "rejected");
       if (rejected.length) {
@@ -1042,6 +1105,11 @@ function AdminControlCenter({ token }: { token: string }) {
   const saveSetting = (key: string, value: string) => run("Setting saved.", () => api(`/admin/settings/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ value }) }, token));
   const updateUser = (userId: string, path: string, body: Record<string, unknown>, message: string) => run(message, () => api(`/admin/users/${userId}${path}`, { method: "PATCH", body: JSON.stringify(body) }, token));
   const deleteUser = (userId: string) => window.confirm("Delete this user and all related records?") && run("User deleted.", () => api(`/admin/users/${userId}`, { method: "DELETE" }, token));
+  const replyToTicket = (ticket: SupportTicket) => {
+    const message = (supportReplies[ticket.id] || "").trim();
+    if (!message) return;
+    run("Customer care reply sent.", () => api(`/admin/support/tickets/${ticket.id}/reply`, { method: "POST", body: JSON.stringify({ message }) }, token)).then(() => setSupportReplies(prev => ({ ...prev, [ticket.id]: "" })));
+  };
 
   const settingsMap = Object.fromEntries(settings.map((item) => [item.key, item.value]));
   const salvationUsers = users.filter((user) => user.salvationPrayedAt);
@@ -1108,6 +1176,10 @@ function AdminControlCenter({ token }: { token: string }) {
       <Panel><SectionTitle title="Broadcast message" subtitle="Send a prayer email to verified opted-in users." /><AdminText label="Prayer message" value={broadcastForm.prayer} onChange={value => setBroadcastForm({ ...broadcastForm, prayer: value })} /><AdminInput label="Verse" value={broadcastForm.verse} onChange={value => setBroadcastForm({ ...broadcastForm, verse: value })} /><AdminInput label="Reference" value={broadcastForm.ref} onChange={value => setBroadcastForm({ ...broadcastForm, ref: value })} /><AdminInput label="Action step" value={broadcastForm.action} onChange={value => setBroadcastForm({ ...broadcastForm, action: value })} /><button className="button primary full" onClick={() => run("Broadcast sent.", () => api("/admin/email/broadcast", { method: "POST", body: JSON.stringify({ prayer: { mood: "announcement", prayer: broadcastForm.prayer, verse: broadcastForm.verse, ref: broadcastForm.ref, action: broadcastForm.action } }) }, token))}>Send broadcast</button><button className="button secondary full" onClick={() => run("Test email sent.", () => api("/admin/email/test", { method: "POST" }, token))}>Send test email</button></Panel>
       <Panel><SectionTitle title="Reminder messages" subtitle="Edit default prayer reminder copy." /><QuickSettings keys={["daily_reminder_en", "daily_reminder_fr", "weekly_reminder_en", "weekly_reminder_fr", "notification_event_message"]} settings={settingsMap} onSave={saveSetting} /></Panel>
       <AdminModule title="Push notifications" body="Message copy and schedules can be managed here. Actual phone push delivery requires device-token storage and FCM/APNs credentials on the backend." items={["Daily reminder copy", "Weekly reminder copy", "One-time announcement copy"]} />
+    </div>}
+
+    {section === "care" && <div className="main-column">
+      <Panel><SectionTitle title="Customer care tickets" subtitle="View users, their account information, problems, and admin replies." /><div className="admin-list">{supportTickets.length ? supportTickets.map(ticket => { const last = ticket.messages?.[ticket.messages.length - 1]; return <div className="admin-row support-ticket-row" key={ticket.id}><div><b>{ticket.subject}</b><p>{last?.body || "No message"}</p><small>{ticket.user?.fullName || "Friend"} / {ticket.user?.email || "No email"} / {ticket.user?.subscriptionStatus || "free"} / {ticket.status}</small><div className="support-thread">{ticket.messages?.map((message, index) => <p key={`${ticket.id}-${index}`} className={message.role === "admin" ? "admin-reply" : ""}><b>{message.role === "admin" ? "Admin" : "User"}:</b> {message.body}</p>)}</div><textarea value={supportReplies[ticket.id] || ""} onChange={event => setSupportReplies(prev => ({ ...prev, [ticket.id]: event.target.value }))} placeholder="Reply to this customer..." /></div><div className="admin-actions"><button onClick={() => replyToTicket(ticket)} disabled={!(supportReplies[ticket.id] || "").trim()}>Reply</button></div></div>; }) : <p>No customer care tickets yet.</p>}</div></Panel>
     </div>}
 
     {section === "settings" && <div className="admin-section-grid">

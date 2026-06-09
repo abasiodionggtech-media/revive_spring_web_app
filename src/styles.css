@@ -49,6 +49,8 @@
 .support-button{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border:1px solid #cfe0da;border-radius:999px;background:linear-gradient(145deg,#fff,#eef7f3);color:var(--emerald);font-weight:900;box-shadow:0 12px 28px rgba(14,75,62,.08);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
 .support-button:hover,.support-button.active{background:var(--emerald);color:#fff;transform:translateY(-1px);box-shadow:0 16px 34px rgba(14,75,62,.18)}
 .support-button:focus-visible{outline:3px solid rgba(63,143,72,.25);outline-offset:3px}
+.notification-button{position:relative}
+.notification-button i{position:absolute;top:-6px;right:-5px;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border:2px solid #fff;border-radius:999px;background:var(--coral);color:#fff;font-size:.62rem;font-style:normal;font-weight:900}
 .prayer-tile{width:100%;text-align:left;color:var(--ink);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease}
 .prayer-tile.clickable:hover{border-color:#b8d2c9;background:#fbfdfc;box-shadow:0 16px 34px rgba(14,75,62,.1);transform:translateY(-2px)}
 .prayer-tile:focus-visible{outline:3px solid rgba(63,143,72,.22);outline-offset:3px}
@@ -68,6 +70,22 @@
 .care-quick-list p{margin-top:5px;font-size:.84rem}
 .care-chat-panel{display:grid;gap:12px}
 .care-messages{min-height:310px;padding:14px;border:1px solid #edf3f0;border-radius:20px;background:linear-gradient(180deg,#fbfdfc,#f5f9f7)}
+.care-compose input,.care-compose textarea{grid-column:1/-1}
 .care-compose textarea{min-height:92px}
+.care-compose .button{justify-self:end}
+.notification-list{display:grid;gap:12px}
+.notification-card{display:grid;grid-template-columns:auto 1fr;gap:13px;width:100%;padding:16px;border:1px solid var(--line);border-radius:20px;background:#fff;text-align:left;color:var(--ink);box-shadow:0 12px 28px rgba(14,75,62,.06)}
+.notification-card.unread{border-color:#b8d2c9;background:linear-gradient(145deg,#fff,#f3f8f6)}
+.notification-card p{margin:5px 0;font-size:.9rem}
+.notification-card small{color:var(--leaf);font-weight:800}
+.notification-mark{display:grid;place-items:center;width:42px;height:42px;border-radius:15px;background:#e8f2ee;color:var(--emerald)}
+.notification-toast{position:fixed;top:86px;right:22px;z-index:20;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;width:min(420px,calc(100vw - 36px));padding:15px;border:1px solid #cfe0da;border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 24px 60px rgba(14,75,62,.18);text-align:left;color:var(--ink);animation:toast-in .32s ease both}
+.notification-toast p{margin-top:4px;font-size:.84rem;line-height:1.4}
+@keyframes toast-in{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.support-ticket-row{align-items:start}
+.support-thread{display:grid;gap:7px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
+.support-thread p{padding:9px 10px;border-radius:12px;background:#fff;font-size:.84rem}
+.support-thread .admin-reply{background:#e8f2ee}
+.support-ticket-row textarea{min-height:82px;margin-top:8px;resize:vertical}
 @media(max-width:900px){.support-button span{display:none}.support-button{width:42px;justify-content:center;padding:0}.care-grid{grid-template-columns:1fr}.care-hero{grid-template-columns:1fr}.prayer-tile{grid-template-columns:auto 1fr auto!important}.prayer-arrow{display:grid!important}}
 @media(max-width:560px){.header-actions{gap:8px}.care-status{justify-self:start}.care-messages{min-height:260px}.care-quick-list article{padding:15px}.prayer-tile{padding:16px}.prayer-arrow{width:30px;height:30px}}
