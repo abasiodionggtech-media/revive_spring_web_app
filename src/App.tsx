@@ -25,6 +25,13 @@ type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
 type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
 type PrayerItem = { id?: string; identifier?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
+type PrayerExperience = {
+  scriptures: Array<{ verse: string; reference: string }>;
+  confessions: string[];
+  guidedPrayer: string;
+  encouragement: string[];
+  videoUrl: string;
+};
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type AppNotification = { id: string; type: string; title: string; body: string; readAt?: string | null; createdAt: string; metadata?: Record<string, unknown> };
 type SupportTicket = { id: string; subject: string; status: string; priority?: string; messages: Array<{ role: string; body: string; senderName?: string; senderEmail?: string; createdAt?: string }>; user?: { email?: string; fullName?: string; subscriptionStatus?: string } ; updatedAt?: string; createdAt?: string };
@@ -565,7 +572,14 @@ function ReminderSetupCard({ value, onChange }: { value: ReminderSettings; onCha
   const setPeriod = (period: "AM" | "PM") => onChange({ ...value, hour: to24Hour(hourView.hour, period) });
 
   return <div className="reminder-card reminder-setup">
-    <span className="large-icon">L</span>
+    <div className="reminder-purpose">
+      <span className="reminder-purpose-icon"><UiIcon name="notification" /></span>
+      <div>
+        <p className="eyebrow">Your daily sacred pause</p>
+        <h3>Choose a time when you can slow down and meet with God.</h3>
+        <p>This gentle reminder is not a deadline. It creates a dependable moment for prayer, Scripture, and peace before the day carries you away.</p>
+      </div>
+    </div>
     <div className="reminder-time-display">{formatReminderTime(value.hour, value.minute)}</div>
     <div className="reminder-wheel-grid">
       <ScrollPicker label="Hour" values={REMINDER_HOURS} selected={hourView.hour} format={(item) => String(item).padStart(2, "0")} onSelect={setHour12} />
@@ -587,10 +601,46 @@ function ReminderSetupCard({ value, onChange }: { value: ReminderSettings; onCha
 }
 
 function ScrollPicker<T extends string | number>({ label, values, selected, format, onSelect }: { label: string; values: readonly T[]; selected: T; format: (value: T) => string; onSelect: (value: T) => void }) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const settleRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const active = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    active?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [selected]);
+
+  const selectCenteredItem = () => {
+    if (settleRef.current) window.clearTimeout(settleRef.current);
+    settleRef.current = window.setTimeout(() => {
+      const list = listRef.current;
+      if (!list) return;
+      const center = list.getBoundingClientRect().top + (list.clientHeight / 2);
+      const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>("button"));
+      if (!buttons.length) return;
+      let closest = buttons[0];
+      let closestDistance = Number.POSITIVE_INFINITY;
+      buttons.forEach(button => {
+        const rect = button.getBoundingClientRect();
+        const distance = Math.abs((rect.top + rect.height / 2) - center);
+        if (distance < closestDistance) {
+          closest = button;
+          closestDistance = distance;
+        }
+      });
+      const index = buttons.indexOf(closest);
+      if (index >= 0 && values[index] !== selected) onSelect(values[index]);
+    }, 90);
+  };
+
   return <div className="scroll-picker">
     <span>{label}</span>
-    <div className="scroll-picker-list" role="listbox" aria-label={label}>
-      {values.map((item) => <button type="button" key={String(item)} className={item === selected ? "active" : ""} onClick={() => onSelect(item)}>{format(item)}</button>)}
+    <div className="scroll-picker-shell">
+      <i className="scroll-picker-focus" aria-hidden="true" />
+      <div ref={listRef} className="scroll-picker-list" role="listbox" aria-label={label} onScroll={selectCenteredItem}>
+        <span className="scroll-picker-spacer" aria-hidden="true" />
+        {values.map((item) => <button type="button" key={String(item)} aria-selected={item === selected} className={item === selected ? "active" : ""} onClick={() => onSelect(item)}>{format(item)}</button>)}
+        <span className="scroll-picker-spacer" aria-hidden="true" />
+      </div>
     </div>
   </div>;
 }
@@ -785,6 +835,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   const [library, setLibrary] = useState<PrayerItem[]>(PRAYER_LIBRARY);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationToast, setNotificationToast] = useState<AppNotification | null>(null);
+  const [showReminderPermission, setShowReminderPermission] = useState(() => !localStorage.getItem("rs_background_reminders_choice"));
   const unreadNotifications = notifications.filter(item => !item.readAt).length;
   const surfaceUnreadNotification = (items: AppNotification[]) => {
     const latest = items.find(item => !item.readAt);
@@ -808,6 +859,16 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
       setNotifications([]);
     }
   };
+  const webDateKey = () => new Intl.DateTimeFormat("en-CA", { timeZone: user.timezone || detectTimezone(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const visitKey = `rs_daily_visit_${user.email}`;
+  const markDailyVisit = () => {
+    const today = webDateKey();
+    const previous = localStorage.getItem(visitKey);
+    localStorage.setItem(visitKey, today);
+    if (previous !== today && "Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification("Welcome back to ReviveSpring", { body: `Good to see you, ${(user.fullName || "Friend").split(" ")[0]}. God has grace for today.` });
+    }
+  };
   const refresh = async () => {
     const [goalData, journalData, analyticsData, verseData, libraryData] = await Promise.all([
       api<any[]>("/goals", {}, token), api<any[]>("/journal", {}, token), api<Analytics>("/analytics", {}, token),
@@ -820,16 +881,41 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   useEffect(() => {
     api<any>("/auth/me", {}, token).then((currentUser) => {
       updateUser(mapUser(currentUser));
+      markDailyVisit();
       return Promise.all([refresh(), loadNotifications()]);
     }).catch(signOut);
   }, []);
   useEffect(() => {
-    const timer = window.setInterval(() => { void loadNotifications(); }, 45_000);
+    const timer = window.setInterval(() => { void loadNotifications(); }, 4 * 60 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [token]);
+  useEffect(() => {
+    const checkStreakReminder = () => {
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: user.timezone || detectTimezone(), hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+      const hour = Number(parts.find(part => part.type === "hour")?.value || 0);
+      const minute = Number(parts.find(part => part.type === "minute")?.value || 0);
+      const today = webDateKey();
+      if ((hour !== 18 && hour !== 21) || minute > 4 || localStorage.getItem(visitKey) === today) return;
+      const reminderKey = `rs_streak_reminder_${user.email}_${today}_${hour}`;
+      if (localStorage.getItem(reminderKey)) return;
+      localStorage.setItem(reminderKey, "shown");
+      const title = `Keep your ${analytics.currentStreak || 0}-day rhythm alive`;
+      const body = "Visit ReviveSpring for one faithful moment before today ends.";
+      setNotificationToast({ id: reminderKey, type: "streak", title, body, createdAt: new Date().toISOString() });
+      if ("Notification" in window && window.Notification.permission === "granted") new window.Notification(`🔥 ${title}`, { body });
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") markDailyVisit(); };
+    const onActivity = () => markDailyVisit();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onActivity);
+    window.addEventListener("pointerdown", onActivity);
+    const timer = window.setInterval(checkStreakReminder, 60_000);
+    checkStreakReminder();
+    return () => { document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onActivity); window.removeEventListener("pointerdown", onActivity); window.clearInterval(timer); };
+  }, [analytics.currentStreak, user.email, user.timezone]);
   const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <UiIcon name="admin" /> }] : NAV_ITEMS;
   const title = tab === "support" ? "Customer Care" : tab === "notifications" ? "Notifications" : navItems.find(item => item.id === tab)?.label || "Admin";
-  return <div className="app-shell"><aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
+  return <div className="app-shell">{showReminderPermission && <div className="modal-backdrop"><section className="mood-modal reminder-permission-modal"><span className="tile-icon emerald"><UiIcon name="notification" /></span><p className="eyebrow">Personal reminders</p><h2>Keep your ReviveSpring reminders ready?</h2><p>The website does not run continuously in the background. While it is open, it briefly checks for missed account messages and keeps your daily welcome and streak reminders current.</p><div className="permission-actions"><button className="button ghost" onClick={() => { localStorage.setItem("rs_background_reminders_choice", "later"); setShowReminderPermission(false); }}>Not now</button><button className="button primary" onClick={async () => { if ("Notification" in window) await window.Notification.requestPermission(); localStorage.setItem("rs_background_reminders_choice", "allowed"); setShowReminderPermission(false); }}>Allow reminders</button></div></section></div>}<aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title="Open notifications" aria-label="Open notifications"><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>Alerts</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title="Open customer care" aria-label="Open customer care"><UiIcon name="support" size={19} /><span>Care</span></button><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></div></header>
       {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
       <div className="screen-wrap">
@@ -837,7 +923,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
         {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
         {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} />}
         {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} />}
-        {tab === "wellness" && <WellnessScreen token={token} />}
+        {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} />}
         {tab === "ai" && <AiScreen user={user} />}
         {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
         {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} />}
@@ -869,18 +955,27 @@ function GoalsScreen({ token, goals, refresh }: { token:string; goals: Goal[]; r
   const [active,setActive]=useState<Goal|null>(null);
   return <><PageIntro title="Daily Goals" subtitle="Open each assigned activity and complete the faithful step." /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"OK":"o"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
 }
-function WellnessScreen({ token }: { token: string }) {
+function WellnessScreen({ token, onNavigate }: { token: string; onNavigate: (tab: AppTab) => void }) {
   const [wellness, setWellness] = useState<Wellness>({});
   const [active, setActive] = useState("goals");
+  const [showAffirmations, setShowAffirmations] = useState(false);
   useEffect(() => { api<Wellness>("/onboarding/wellness", {}, token).then(setWellness).catch(() => setWellness({ overall: 68, insight: "Prayer, reflection, and daily goals are building a steadier rhythm.", pillars: { prayer: { score: 76 }, journal: { score: 58 }, goals: { score: 72 } } })); }, [token]);
   const pillar = (key: string) => wellness.pillars?.[key]?.score ?? 0;
   const details = {
-    goals: { title: "Scripture Awareness", score: pillar("goals"), icon: <UiIcon name="goals" />, tone: "emerald", summary: "Daily goals and Scripture steps show how consistently you turn intention into practice.", next: "Open Daily Goals and complete one Scripture activity today.", signals: ["Completed goals", "Scripture actions", "Daily consistency"] },
-    prayer: { title: "Peace", score: pillar("prayer"), icon: <UiIcon name="pray" />, tone: "sky", summary: "Prayer activity reflects how often you pause, breathe, and bring your real life to God.", next: "Choose one feeling on Home and stay with the prayer for the full timer.", signals: ["Guided prayers", "Mood prayers", "Prayer time"] },
-    journal: { title: "Rest", score: pillar("journal"), icon: <UiIcon name="journal" />, tone: "gold", summary: "Journal entries help measure reflection, emotional release, gratitude, and spiritual rest.", next: "Write one honest journal note about what you are carrying today.", signals: ["Journal rhythm", "Reflection depth", "Gratitude"] },
+    goals: { title: "Scripture Awareness", score: pillar("goals"), icon: <UiIcon name="goals" />, tone: "emerald", summary: "Daily goals and Scripture steps show how consistently you turn intention into practice.", next: "Open Daily Goals and complete one Scripture activity today.", signals: ["Completed goals", "Scripture actions", "Daily consistency"], target: "goals" as AppTab },
+    prayer: { title: "Peace", score: pillar("prayer"), icon: <UiIcon name="pray" />, tone: "sky", summary: "Prayer activity reflects how often you pause, breathe, and bring your real life to God.", next: "Choose a guided prayer and stay with it for a quiet moment.", signals: ["Guided prayers", "Mood prayers", "Prayer time"], target: "prayers" as AppTab },
+    journal: { title: "Rest", score: pillar("journal"), icon: <UiIcon name="journal" />, tone: "gold", summary: "Journal entries help measure reflection, emotional release, gratitude, and spiritual rest.", next: "Write one honest journal note about what you are carrying today.", signals: ["Journal rhythm", "Reflection depth", "Gratitude"], target: "journal" as AppTab },
+    streak: { title: "Consistency", score: pillar("streak"), icon: <UiIcon name="wellness" />, tone: "green", summary: "Your visits, completed actions, and returning rhythm show how faithfully small habits are becoming part of your life.", next: "Return Home and complete one meaningful action today.", signals: ["Current streak", "Daily visits", "Repeat practice"], target: "home" as AppTab },
   };
   const selected = details[active as keyof typeof details];
-  return <><PageIntro title="Spiritual Wellness" subtitle="AI-guided faith health from onboarding and daily progress." /><div className="wellness-grid"><Panel className="score-panel wellness-score-card"><div className="score-ring" style={{ background: `conic-gradient(var(--emerald) 0 ${wellness.overall ?? 0}%,#e8f1ee ${wellness.overall ?? 0}% 100%)` }}><span>{wellness.overall ?? 0}%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>{wellness.insight ?? "Your score updates as you pray, journal, complete goals, and build consistency."}</p></div></Panel><div className="metric-grid wellness-metrics">{Object.entries(details).map(([key, item]) => <Stat key={key} value={`${item.score}%`} label={item.title} onClick={() => setActive(key)} />)}</div></div><Panel className="wellness-detail"><span className={`tile-icon ${selected.tone}`}>{selected.icon}</span><div><p className="eyebrow">Selected insight</p><h3>{selected.title}</h3><p>{selected.summary}</p><div className="wellness-signal-list">{selected.signals.map(signal => <span key={signal}>{signal}</span>)}</div><p className="action-step"><b>Next step</b>{selected.next}</p></div></Panel><PrayerTile title="Guided Affirmation" body="I am loved, held, restored, and strengthened for today." icon={<MoodIcon name="sparkle" />} tone="green" /></>;
+  const affirmations = [
+    "I am loved by God completely, even while I am still growing.",
+    "I am held in peace; fear does not have the final word over my day.",
+    "God is restoring my mind, renewing my strength, and guiding my next step.",
+    "I can move slowly, breathe deeply, and trust that grace is already present.",
+    "I am not alone. I am seen, supported, and strengthened for what is ahead.",
+  ];
+  return <><PageIntro title="Spiritual Wellness" subtitle="AI-guided faith health from onboarding and daily progress." /><div className="wellness-grid"><Panel className="score-panel wellness-score-card"><div className="score-ring" style={{ background: `conic-gradient(var(--emerald) 0 ${wellness.overall ?? 0}%,#e8f1ee ${wellness.overall ?? 0}% 100%)` }}><span>{wellness.overall ?? 0}%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>{wellness.insight ?? "Your score updates as you pray, journal, complete goals, and build consistency."}</p></div></Panel><div className="metric-grid wellness-metrics">{Object.entries(details).map(([key, item]) => <Stat key={key} value={`${item.score}%`} label={item.title} active={active === key} onClick={() => setActive(key)} />)}</div></div><Panel className="wellness-detail"><span className={`tile-icon ${selected.tone}`}>{selected.icon}</span><div><p className="eyebrow">Selected insight</p><h3>{selected.title}</h3><p>{selected.summary}</p><div className="wellness-signal-list">{selected.signals.map(signal => <button type="button" key={signal} onClick={() => onNavigate(selected.target)}>{signal}</button>)}</div><button type="button" className="action-step wellness-action" onClick={() => onNavigate(selected.target)}><b>Next step</b>{selected.next}<span>{"->"}</span></button></div></Panel><PrayerTile title="Guided Affirmations" body="Open five faith-filled declarations for peace, restoration, courage, and hope." icon={<MoodIcon name="sparkle" />} tone="green" onOpen={() => setShowAffirmations(true)} />{showAffirmations && <div className="modal-backdrop" onClick={() => setShowAffirmations(false)}><section className="mood-modal affirmation-modal" onClick={event => event.stopPropagation()}><button className="modal-close prayer-close" onClick={() => setShowAffirmations(false)} aria-label="Close affirmations"><ClosePrayerIcon /></button><span className="tile-icon green"><MoodIcon name="sparkle" /></span><p className="eyebrow">Speak life over your day</p><h2>Guided Affirmations</h2><p>Read each declaration slowly. Pause after every line and let the words settle in your heart.</p><div className="affirmation-list">{affirmations.map((text, index) => <article key={text}><span>{String(index + 1).padStart(2, "0")}</span><p>{text}</p></article>)}</div></section></div>}</>;
 }
 function AiScreen({user}:{user:User}) {
   const initialMessage: ChatMessage = { role: "assistant", content: "Hello. I am your Bible and prayer AI. Ask me for a prayer, verse, or encouragement." };
@@ -1240,7 +1335,7 @@ function AdminScreen({ token, goals, entries }: { token:string; goals: Goal[]; e
 function PageIntro({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) { return <header className="page-intro"><div><p className="eyebrow">ReviveSpring</p><h2>{title}</h2><p>{subtitle}</p></div>{action}</header>; }
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) { return <div className="section-title"><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>; }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section>; }
-function Stat({ value, label, onClick }: { value: string; label: string; onClick?: () => void }) { return <button type="button" className={`stat ${onClick ? "clickable" : ""}`} onClick={onClick}><b>{value}</b><span>{label}</span></button>; }
+function Stat({ value, label, onClick, active = false }: { value: string; label: string; onClick?: () => void; active?: boolean }) { return <button type="button" aria-pressed={onClick ? active : undefined} className={`stat ${onClick ? "clickable" : ""} ${active ? "active" : ""}`.trim()} onClick={onClick}><b>{value}</b><span>{label}</span>{onClick && <small>{active ? "Viewing details" : "Tap to explore"}</small>}</button>; }
 function PrayerTile({ title, body, icon, tone, onOpen }: { title: string; body: string; icon: React.ReactNode; tone: string; onOpen?:()=>void }) {
   return <button type="button" className={`prayer-tile ${onOpen ? "clickable" : "display-only"}`.trim()} onClick={onOpen} aria-label={onOpen ? `Open ${title}` : title}><span className={`tile-icon ${tone}`}>{icon}</span><div><h3>{title}</h3><p>{body}</p></div>{onOpen && <span className="prayer-arrow" aria-hidden="true">{">"}</span>}</button>;
 }
@@ -1252,10 +1347,60 @@ function moodPrayerItem(mood: string): PrayerItem {
   const selectedVerse = prayer.verses[Math.floor(Math.random() * prayer.verses.length)];
   return { identifier: `mood-${slugify(mood)}`, title: `Prayer for ${mood}`, body: prayer.body, icon: <MoodIcon name={prayer.icon} />, tone: prayer.tone, mood, verse: selectedVerse.verse, reference: selectedVerse.reference, action: prayer.action };
 }
+function prayerExperience(item: PrayerItem): PrayerExperience {
+  const topic = `${item.mood || ""} ${item.title}`.toLowerCase();
+  const moodMatch = Object.keys(MOOD_PRAYERS).find(name => topic.includes(name.toLowerCase()));
+  const moodPrayer = moodMatch ? MOOD_PRAYERS[moodMatch] : undefined;
+  const anxiety = topic.includes("anx");
+  const healing = topic.includes("heal");
+  const family = topic.includes("family");
+  const morning = topic.includes("morning") || topic.includes("renewal");
+  const scriptures = moodPrayer?.verses || (anxiety ? MOOD_PRAYERS.Anxious.verses : healing ? MOOD_PRAYERS.Healing.verses : family ? MOOD_PRAYERS["Family concern"].verses : morning ? [
+    { verse: "Cause me to hear thy lovingkindness in the morning; for in thee do I trust.", reference: "Psalm 143:8" },
+    { verse: "It is of the Lord's mercies that we are not consumed... they are new every morning.", reference: "Lamentations 3:22-23" },
+    { verse: "This is the day which the Lord hath made; we will rejoice and be glad in it.", reference: "Psalm 118:24" },
+  ] : [
+    { verse: item.verse || "The Lord is near to all who call upon him.", reference: item.reference || "Psalm 145:18" },
+    { verse: "God is our refuge and strength, a very present help in trouble.", reference: "Psalm 46:1" },
+    { verse: "Commit thy way unto the Lord; trust also in him.", reference: "Psalm 37:5" },
+  ]);
+  return {
+    scriptures,
+    confessions: anxiety ? [
+      "God's peace guards my heart and mind.",
+      "I release the future and receive grace for this moment.",
+      "Fear may speak, but it does not lead me; the Spirit of God does.",
+    ] : healing ? [
+      "God is present in every part of my healing journey.",
+      "My pain is seen, and restoration is still possible.",
+      "I receive strength for today and hope for tomorrow.",
+    ] : family ? [
+      "God's wisdom and peace are welcome in my home.",
+      "I choose patient words, forgiveness, and faithful love.",
+      "My family is held in God's care even when I cannot control every outcome.",
+    ] : [
+      "God is with me, guiding me with wisdom and grace.",
+      "I can take today's next faithful step without fear.",
+      "My hope is rooted in God's unchanging love.",
+    ],
+    guidedPrayer: moodPrayer?.body || item.body,
+    encouragement: anxiety ? [
+      "You do not need to solve everything before you can breathe.",
+      "Peace can arrive in small moments: one breath, one verse, one honest prayer.",
+      "Needing support is not weak faith. God often brings care through safe people.",
+    ] : [
+      "Growth is still happening in the quiet places you cannot yet measure.",
+      "God meets honest hearts, not perfect performances.",
+      "A small faithful response today can become tomorrow's stronger rhythm.",
+    ],
+    videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`Christian prophetic prayer for ${item.title}`)}`,
+  };
+}
 function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item=moodPrayerItem(mood); return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
 function ClosePrayerIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>; }
 function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){
   const required=15;
+  const experience=prayerExperience(item);
   const[recorded,setRecorded]=useState(()=>{try{return localStorage.getItem(prayerStorageKey(item))==="true"}catch{return false}});
   useEffect(()=>{
     if(recorded) return;
@@ -1270,7 +1415,10 @@ function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:stri
     },required*1000);
     return()=>window.clearTimeout(timer);
   },[item,recorded,refresh,token]);
-  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>God is with you in this moment.</h2>{item.verse&&<q>{item.verse}</q>}{item.reference&&<b>{item.reference}</b>}<p>{item.body}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}<p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"Stay with this prayer quietly. It will be recorded automatically once."}</p></section></div>
+  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer prayer-experience-modal" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>A complete prayer experience for this season.</h2><PrayerResourceSection icon="01" title="Relevant Scriptures">{experience.scriptures.map(scripture => <blockquote key={scripture.reference}><q>{scripture.verse}</q><b>{scripture.reference}</b></blockquote>)}</PrayerResourceSection><PrayerResourceSection icon="02" title="Faith Confessions"><div className="prayer-resource-list">{experience.confessions.map(confession => <p key={confession}>{confession}</p>)}</div></PrayerResourceSection><PrayerResourceSection icon="03" title="Guided Prayer"><p className="guided-prayer-copy">{experience.guidedPrayer}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}</PrayerResourceSection><PrayerResourceSection icon="04" title="Prophetic Prayer Video"><button className="prophetic-video-card" type="button" onClick={() => window.open(experience.videoUrl, "_blank", "noopener,noreferrer")}><span className="video-play">{"\u25B6"}</span><div><b>Watch a prayer for {item.title}</b><p>Opens a curated YouTube search so you can choose a trusted ministry voice.</p></div></button></PrayerResourceSection><PrayerResourceSection icon="05" title="Words of Encouragement and Hope"><div className="prayer-resource-list hope">{experience.encouragement.map(message => <p key={message}>{message}</p>)}</div></PrayerResourceSection><p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"This prayer will be recorded once after a quiet moment here."}</p></section></div>
+}
+function PrayerResourceSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return <section className="prayer-resource-section"><header><span>{icon}</span><h3>{title}</h3></header>{children}</section>;
 }
 function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
