@@ -35,6 +35,7 @@ type PrayerExperience = {
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type AppNotification = { id: string; type: string; title: string; body: string; readAt?: string | null; createdAt: string; metadata?: Record<string, unknown> };
 type SupportTicket = { id: string; subject: string; status: string; priority?: string; messages: Array<{ role: string; body: string; senderName?: string; senderEmail?: string; createdAt?: string }>; user?: { email?: string; fullName?: string; subscriptionStatus?: string } ; updatedAt?: string; createdAt?: string };
+type DeletionFeedback = { id: string; user_email: string; user_full_name?: string | null; reason: string; feedback: string; created_at: string };
 type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
 type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
 type ReminderSettings = {
@@ -742,14 +743,15 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
 }
 
 function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) => void }) {
-  const [code, setCode] = useState(""); const [error, setError] = useState(""); const navigate = useNavigate();
-  const pending = sessionStorage.getItem("rs_pending_email");
+  const [code, setCode] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const navigate = useNavigate();
+  const pending = new URLSearchParams(window.location.search).get("email") || sessionStorage.getItem("rs_pending_email");
   if (!pending) return <Navigate to="/auth" replace />;
   return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">MAIL</div><p className="kicker">One last step</p><h1>Verify your email</h1>
-    <p className="lead">Enter the 6-digit code sent to your inbox. For this preview, any six digits will work.</p>
+    <p className="lead">Enter the real 6-digit code sent to {pending}. You can also open this page directly from your verification email.</p>
     <Field label="Verification code" value={code} onChange={setCode} placeholder="000000" />
     {error && <p className="form-error">{error}</p>}
-    <button className="button primary full" disabled={code.length !== 6} onClick={async () => { try { const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); onVerified(mapUser(data.user), data.token); sessionStorage.removeItem("rs_pending_email"); navigate("/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } }}>Verify and continue <span>{"->"}</span></button>
+    <button className="button primary full" disabled={code.length !== 6 || busy} onClick={async () => { try { setBusy(true); const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); const nextUser = mapUser(data.user); onVerified(nextUser, data.token); sessionStorage.removeItem("rs_pending_email"); navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } finally { setBusy(false); } }}>{busy ? "Verifying..." : "Verify and continue"} <span>{"->"}</span></button>
+    <button className="link-button" onClick={async () => { try { setBusy(true); setError(""); await api<any>("/auth/resend-otp", { method:"POST", body:JSON.stringify({ email:pending }) }); } catch (err) { setError(err instanceof Error ? err.message : "Could not resend the code."); } finally { setBusy(false); } }}>Resend code</button>
   </div></PublicShell>;
 }
 
@@ -927,7 +929,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
         {tab === "ai" && <AiScreen user={user} />}
         {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
         {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} />}
-        {tab === "profile" && <ProfileScreen user={user} language={language} signOut={signOut} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
+        {tab === "profile" && <ProfileScreen user={user} token={token} language={language} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
         {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
       </div>
     </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
@@ -1099,8 +1101,27 @@ function NotificationScreen({ token, notifications, refresh }: { token: string; 
   return <><PageIntro title="Notifications" subtitle="Security alerts, customer-care replies, and account updates." action={<button className="button secondary" onClick={markAll}>Mark all read</button>} /><div className="notification-list">{notifications.length ? notifications.map(item => <button className={`notification-card ${item.readAt ? "" : "unread"}`.trim()} key={item.id} onClick={() => markOne(item)}><span className="notification-mark"><UiIcon name={item.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{item.title}</b><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()} {item.readAt ? "/ read" : "/ unread"}</small></div></button>) : <Panel><SectionTitle title="No notifications yet" subtitle="Security alerts and customer care replies will appear here." /></Panel>}</div></>;
 }
 
-function ProfileScreen({ user, language, signOut, openAdmin }: { user: User; language: Lang; signOut: () => void; openAdmin?: () => void }) {
-  const [emails, setEmails] = useState(true); return <><PageIntro title="My Profile" subtitle="Personal settings and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div><div className="profile-line"><span>Sign-in method</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel></div></>;
+function ProfileScreen({ user, token, language, signOut, onDeleted, openAdmin }: { user: User; token: string; language: Lang; signOut: () => void; onDeleted: () => void; openAdmin?: () => void }) {
+  const [emails, setEmails] = useState(true);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteFeedback, setDeleteFeedback] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteAccount = async () => {
+    if (!deleteReason.trim() || !deleteFeedback.trim() || deleting) return;
+    if (!window.confirm("Delete your account and all related records? This cannot be undone.")) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api("/auth/me", { method: "DELETE", body: JSON.stringify({ reason: deleteReason.trim(), feedback: deleteFeedback.trim() }) }, token);
+      onDeleted();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete your account.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+  return <><PageIntro title="My Profile" subtitle="Personal settings, account care, and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div><div className="profile-line"><span>Sign-in method</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel><Panel><h3>Delete account</h3><p>Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Short reason for leaving" /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder="What made you decide to delete your account?" rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? "Deleting account..." : "Delete my account"}</button></Panel></div></>;
 }
 
 const ADMIN_SECTIONS = [
@@ -1137,6 +1158,7 @@ function AdminControlCenter({ token }: { token: string }) {
   const [conversations, setConversations] = useState<any[]>([]);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [supportReplies, setSupportReplies] = useState<Record<string, string>>({});
+  const [deletionFeedback, setDeletionFeedback] = useState<DeletionFeedback[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [prayerForm, setPrayerForm] = useState({ category: "morning", titleEn: "", titleFr: "", verseEn: "", verseFr: "", verseRef: "", prayerEn: "", prayerFr: "", actionEn: "", actionFr: "", isPremium: false, isVisible: true });
@@ -1162,8 +1184,9 @@ function AdminControlCenter({ token }: { token: string }) {
         api<any>("/admin/ai/conversations?limit=10", {}, token),
         api<any[]>("/admin/ai/knowledge", {}, token),
         api<any>("/admin/support/tickets?limit=50", {}, token),
+        api<any>("/admin/deletion-feedback?limit=50", {}, token),
       ]);
-      const [statsResult, userResult, libraryResult, mentalResult, salvationResult, settingsResult, convoResult, knowledgeResult, supportResult] = results;
+      const [statsResult, userResult, libraryResult, mentalResult, salvationResult, settingsResult, convoResult, knowledgeResult, supportResult, deletionResult] = results;
 
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
       if (userResult.status === "fulfilled") setUsers(userResult.value.users || []);
@@ -1174,6 +1197,7 @@ function AdminControlCenter({ token }: { token: string }) {
       if (convoResult.status === "fulfilled") setConversations(convoResult.value.conversations || []);
       if (knowledgeResult.status === "fulfilled") setKnowledge(knowledgeResult.value || []);
       if (supportResult.status === "fulfilled") setSupportTickets(supportResult.value.tickets || []);
+      if (deletionResult.status === "fulfilled") setDeletionFeedback(deletionResult.value.feedback || []);
 
       const rejected = results.filter((result) => result.status === "rejected");
       if (rejected.length) {
@@ -1200,6 +1224,12 @@ function AdminControlCenter({ token }: { token: string }) {
   const saveSetting = (key: string, value: string) => run("Setting saved.", () => api(`/admin/settings/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ value }) }, token));
   const updateUser = (userId: string, path: string, body: Record<string, unknown>, message: string) => run(message, () => api(`/admin/users/${userId}${path}`, { method: "PATCH", body: JSON.stringify(body) }, token));
   const deleteUser = (userId: string) => window.confirm("Delete this user and all related records?") && run("User deleted.", () => api(`/admin/users/${userId}`, { method: "DELETE" }, token));
+  const sendVerificationEmail = (userId: string) => run("Verification email sent.", () => api(`/admin/users/${userId}/verify`, { method: "PATCH", body: JSON.stringify({}) }, token));
+  const changeUserRole = (user: any) => {
+    const nextRole = user.role === "admin" ? "user" : "admin";
+    const confirmCode = nextRole === "admin" ? window.prompt("Enter the admin confirmation code to grant admin access.") || "" : "";
+    return updateUser(user.id, "/role", { role: nextRole, confirmCode }, user.role === "admin" ? "Admin access removed." : "Admin access granted.");
+  };
   const replyToTicket = (ticket: SupportTicket) => {
     const message = (supportReplies[ticket.id] || "").trim();
     if (!message) return;
@@ -1233,8 +1263,9 @@ function AdminControlCenter({ token }: { token: string }) {
     </div>}
 
     {section === "users" && <div className="main-column">
-      <Panel><SectionTitle title="User management" subtitle="Verify, disable, delete, or change subscriptions." /><div className="admin-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" /><button className="button secondary" onClick={loadAdmin}>Search</button></div><AdminUserList users={users} actions={(user) => <><button onClick={() => updateUser(user.id, "/verify", {}, "User verified.")}>Verify</button><button onClick={() => updateUser(user.id, "/disable", { disabled: !user.isDisabled }, user.isDisabled ? "User enabled." : "User disabled.")}>{user.isDisabled ? "Enable" : "Disable"}</button><button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button><button onClick={() => updateUser(user.id, "/role", { role: user.role === "admin" ? "user" : "admin" }, user.role === "admin" ? "Admin access removed." : "Admin access granted.")}>{user.role === "admin" ? "Remove admin" : "Make admin"}</button><button className="danger" onClick={() => deleteUser(user.id)}>Delete</button></>} /></Panel>
+      <Panel><SectionTitle title="User management" subtitle="Send verification emails, disable access, delete users, or change subscriptions." /><div className="admin-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" /><button className="button secondary" onClick={loadAdmin}>Search</button></div><AdminUserList users={users} actions={(user) => <><button onClick={() => sendVerificationEmail(user.id)} disabled={user.isEmailVerified}>Send verify email</button><button onClick={() => updateUser(user.id, "/disable", { disabled: !user.isDisabled }, user.isDisabled ? "User enabled." : "User disabled.")}>{user.isDisabled ? "Enable" : "Disable"}</button><button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button><button onClick={() => changeUserRole(user)}>{user.role === "admin" ? "Remove admin" : "Make admin"}</button><button className="danger" onClick={() => deleteUser(user.id)}>Delete</button></>} /></Panel>
       <Panel><SectionTitle title="Prayer of Salvation records" subtitle="Users who prayed and saved the date." /><AdminUserList users={salvationUsers} empty="No salvation prayer records yet." /></Panel>
+      <Panel><SectionTitle title="Account deletion feedback" subtitle="Required feedback left by users before deleting their accounts." /><div className="admin-list">{deletionFeedback.length ? deletionFeedback.map(item => <div className="admin-row" key={item.id}><div><b>{item.reason}</b><p>{item.feedback}</p><small>{item.user_full_name || "Former user"} / {item.user_email} / {new Date(item.created_at).toLocaleString()}</small></div></div>) : <p>No account deletion feedback yet.</p>}</div></Panel>
     </div>}
 
     {section === "content" && <div className="admin-section-grid">
