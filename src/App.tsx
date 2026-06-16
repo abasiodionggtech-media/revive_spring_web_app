@@ -88,16 +88,17 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode }, { crashe
   }
   render() {
     if (!this.state.crashed) return this.props.children;
+    const language = storedLang();
     return <main className="splash-screen">
       <Brand />
-      <h1>Let us refresh your session</h1>
-      <p>Your saved browser session is out of date. Refreshing will take you back to sign in safely.</p>
+      <h1>{tr(language, "Let us refresh your session", "Actualisons votre session")}</h1>
+      <p>{tr(language, "Your saved browser session is out of date. Refreshing will take you back to sign in safely.", "Votre session enregistree dans le navigateur est obsolete. L'actualisation vous ramenera a la connexion en toute securite.")}</p>
       <button className="button primary" onClick={() => {
         localStorage.removeItem("rs_user");
         localStorage.removeItem("rs_token");
         localStorage.removeItem("rs_onboarded");
         window.location.href = "/auth";
-      }}>Refresh session</button>
+      }}>{tr(language, "Refresh session", "Actualiser la session")}</button>
     </main>;
   }
 }
@@ -188,6 +189,32 @@ function prayerStorageKey(item: PrayerItem) {
 }
 
 const LANG_LABELS: Record<Lang, string> = { en: "English", fr: "Francais" };
+
+function tr(language: Lang | null | undefined, en: string, fr: string) {
+  return language === "fr" ? fr : en;
+}
+
+function storedLang(): Lang {
+  try {
+    const raw = localStorage.getItem("rs_language");
+    return raw === "fr" ? "fr" : "en";
+  } catch {
+    return "en";
+  }
+}
+
+function navItemsFor(language: Lang, includeAdmin = false) {
+  const items: { id: AppTab; label: string; icon: React.ReactNode }[] = [
+    { id: "home", label: tr(language, "Home", "Accueil"), icon: <UiIcon name="home" /> },
+    { id: "prayers", label: tr(language, "Pray", "Prier"), icon: <UiIcon name="pray" /> },
+    { id: "journal", label: tr(language, "Journal", "Journal"), icon: <UiIcon name="journal" /> },
+    { id: "goals", label: tr(language, "Goals", "Objectifs"), icon: <UiIcon name="goals" /> },
+    { id: "wellness", label: tr(language, "Wellness", "Bien-etre"), icon: <UiIcon name="wellness" /> },
+    { id: "ai", label: tr(language, "AI Companion", "Assistant IA"), icon: <UiIcon name="ai" /> },
+    { id: "profile", label: tr(language, "Profile", "Profil"), icon: <UiIcon name="profile" /> },
+  ];
+  return includeAdmin ? [...items, { id: "admin" as const, label: tr(language, "Admin", "Admin"), icon: <UiIcon name="admin" /> }] : items;
+}
 
 type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "notification" | "admin";
 
@@ -421,10 +448,10 @@ export default function App() {
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
       <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
-      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
-      <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
-      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setOnboarded(true); setUser(updatedUser); }} /> : <Navigate to="/auth" replace />} />
-      <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} updateUser={setUser} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
+      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setLanguage(updatedUser.language); setOnboarded(true); setUser(updatedUser); }} /> : <Navigate to="/auth" replace />} />
+      <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} updateUser={setUser} setLanguage={setLanguage} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </AppErrorBoundary>
@@ -433,6 +460,7 @@ export default function App() {
 
 function SplashPage({ nextPath }: { nextPath: string }) {
   const navigate = useNavigate();
+  const language = storedLang();
   useEffect(() => {
     const timer = window.setTimeout(() => navigate(nextPath, { replace: true }), 1800);
     return () => window.clearTimeout(timer);
@@ -440,14 +468,15 @@ function SplashPage({ nextPath }: { nextPath: string }) {
   return <main className="splash-screen">
     <div className="splash-logo image"><img src="/revivespring-icon.png" alt="ReviveSpring" /></div>
     <h1>ReviveSpring</h1>
-    <p>Revive Your Spirit. Renew Your Day.</p>
+    <p>{tr(language, "Revive Your Spirit. Renew Your Day.", "Ranimez votre esprit. Renouvelez votre journee.")}</p>
     <div className="splash-loader"><i /></div>
-    <button className="link-button" onClick={() => navigate(nextPath, { replace: true })}>Continue</button>
+    <button className="link-button" onClick={() => navigate(nextPath, { replace: true })}>{tr(language, "Continue", "Continuer")}</button>
   </main>;
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">RS</span><span><b>ReviveSpring</b>{!compact && <small>Faith for every day</small>}</span></div>;
+  const language = storedLang();
+  return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">RS</span><span><b>ReviveSpring</b>{!compact && <small>{tr(language, "Faith for every day", "La foi pour chaque jour")}</small>}</span></div>;
 }
 
 function UserAvatar({ user, className = "" }: { user: User; className?: string }) {
@@ -648,17 +677,18 @@ function ScrollPicker<T extends string | number>({ label, values, selected, form
 
 function LanguagePage({ current, onSelect }: { current: Lang | null; onSelect: (lang: Lang) => void }) {
   const navigate = useNavigate();
+  const language = current ?? storedLang();
   return <PublicShell>
     <div className="auth-card language-card">
       <Brand />
-      <p className="kicker">Personalize your journey</p><h1>Choose your language</h1>
-      <p className="lead">Choisissez votre langue. You can change this later in your profile.</p>
+      <p className="kicker">{tr(language, "Personalize your journey", "Personnalisez votre parcours")}</p><h1>{tr(language, "Choose your language", "Choisissez votre langue")}</h1>
+      <p className="lead">{tr(language, "Choose your language. You can change this later in your profile.", "Choisissez votre langue. Vous pourrez la modifier plus tard dans votre profil.")}</p>
       <div className="language-options">{(["en", "fr"] as Lang[]).map(lang =>
         <button className={`language-option ${current === lang ? "selected" : ""}`} onClick={() => onSelect(lang)} key={lang}>
           <span className="language-icon">{lang === "en" ? "EN" : "FR"}</span><b>{LANG_LABELS[lang]}</b><small>{lang === "en" ? "Continue in English" : "Continuer en francais"}</small>
         </button>)}
       </div>
-      <button className="button primary full" disabled={!current} onClick={() => navigate("/auth")}>Continue <span>{"->"}</span></button>
+      <button className="button primary full" disabled={!current} onClick={() => navigate("/auth")}>{tr(language, "Continue", "Continuer")} <span>{"->"}</span></button>
     </div>
   </PublicShell>;
 }
@@ -717,52 +747,54 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
     finally { setBusy(false); }
   };
   return <PublicShell><div className="auth-card">
-    <Brand /><p className="kicker">Welcome to your quiet space</p><h1>{signup ? "Create your account" : "Welcome back"}</h1>
-    <p className="lead">{signup ? "Start a daily rhythm shaped around your faith." : "Continue your prayer and reflection journey."}</p>
-    <div className="segmented"><button className={!signup ? "active" : ""} onClick={() => setSignup(false)}>Sign in</button><button className={signup ? "active" : ""} onClick={() => setSignup(true)}>Sign up</button></div>
+    <Brand /><p className="kicker">{tr(language, "Welcome to your quiet space", "Bienvenue dans votre espace paisible")}</p><h1>{signup ? tr(language, "Create your account", "Creez votre compte") : tr(language, "Welcome back", "Bon retour")}</h1>
+    <p className="lead">{signup ? tr(language, "Start a daily rhythm shaped around your faith.", "Commencez un rythme quotidien faconne autour de votre foi.") : tr(language, "Continue your prayer and reflection journey.", "Poursuivez votre parcours de priere et de reflection.")}</p>
+    <div className="segmented"><button className={!signup ? "active" : ""} onClick={() => setSignup(false)}>{tr(language, "Sign in", "Se connecter")}</button><button className={signup ? "active" : ""} onClick={() => setSignup(true)}>{tr(language, "Sign up", "S'inscrire")}</button></div>
     <form onSubmit={submit} className="form-stack">
       {error && <p className="form-error">{error}</p>}
-      {signup && <Field label="Full name" value={name} onChange={setName} placeholder="Your full name" />}
-      <Field label="Email address" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
-      <Field label="Password" value={password} onChange={setPassword} placeholder="At least 6 characters" type="password" />
-      <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? "Please wait..." : signup ? "Create account" : "Sign in"} <span>{"->"}</span></button>
+      {signup && <Field label={tr(language, "Full name", "Nom complet")} value={name} onChange={setName} placeholder={tr(language, "Your full name", "Votre nom complet")} />}
+      <Field label={tr(language, "Email address", "Adresse e-mail")} value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
+      <Field label={tr(language, "Password", "Mot de passe")} value={password} onChange={setPassword} placeholder={tr(language, "At least 6 characters", "Au moins 6 caracteres")} type="password" />
+      <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? tr(language, "Please wait...", "Veuillez patienter...") : signup ? tr(language, "Create account", "Creer un compte") : tr(language, "Sign in", "Se connecter")} <span>{"->"}</span></button>
     </form>
-    <div className="auth-divider"><span>or continue with</span></div>
+    <div className="auth-divider"><span>{tr(language, "or continue with", "ou continuer avec")}</span></div>
     {GOOGLE_CLIENT_ID ? <div className="google-signin-panel">
       <div className="google-signin-copy">
         <span className="google-signin-icon">G</span>
         <div>
-          <b>Google account</b>
-          <p>Use your saved account to continue securely.</p>
+          <b>{tr(language, "Google account", "Compte Google")}</b>
+          <p>{tr(language, "Use your saved account to continue securely.", "Utilisez votre compte enregistre pour continuer en toute securite.")}</p>
         </div>
       </div>
       <div className="google-button" ref={googleButton} />
-    </div> : <p className="form-error">Set VITE_GOOGLE_CLIENT_ID to enable Google Sign-In on the web.</p>}
-    <button className="link-button" onClick={() => setSignup(!signup)}>{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
+    </div> : <p className="form-error">{tr(language, "Set VITE_GOOGLE_CLIENT_ID to enable Google Sign-In on the web.", "Definissez VITE_GOOGLE_CLIENT_ID pour activer Google Sign-In sur le web.")}</p>}
+    <button className="link-button" onClick={() => setSignup(!signup)}>{signup ? tr(language, "Already have an account? Sign in", "Vous avez deja un compte ? Connectez-vous") : tr(language, "New here? Create an account", "Nouveau ici ? Creez un compte")}</button>
   </div></PublicShell>;
 }
 
 function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) => void }) {
   const [code, setCode] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const navigate = useNavigate();
   const pending = new URLSearchParams(window.location.search).get("email") || sessionStorage.getItem("rs_pending_email");
+  const language = storedLang();
   if (!pending) return <Navigate to="/auth" replace />;
-  return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">MAIL</div><p className="kicker">One last step</p><h1>Verify your email</h1>
-    <p className="lead">Enter the real 6-digit code sent to {pending}. You can also open this page directly from your verification email.</p>
-    <Field label="Verification code" value={code} onChange={setCode} placeholder="000000" />
+  return <PublicShell><div className="auth-card"><Brand /><div className="large-icon">MAIL</div><p className="kicker">{tr(language, "One last step", "Une derniere etape")}</p><h1>{tr(language, "Verify your email", "Verifiez votre e-mail")}</h1>
+    <p className="lead">{tr(language, `Enter the real 6-digit code sent to ${pending}. You can also open this page directly from your verification email.`, `Entrez le vrai code a 6 chiffres envoye a ${pending}. Vous pouvez aussi ouvrir cette page directement depuis votre e-mail de verification.`)}</p>
+    <Field label={tr(language, "Verification code", "Code de verification")} value={code} onChange={setCode} placeholder="000000" />
     {error && <p className="form-error">{error}</p>}
-    <button className="button primary full" disabled={code.length !== 6 || busy} onClick={async () => { try { setBusy(true); const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); const nextUser = mapUser(data.user); onVerified(nextUser, data.token); sessionStorage.removeItem("rs_pending_email"); navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : "Verification failed."); } finally { setBusy(false); } }}>{busy ? "Verifying..." : "Verify and continue"} <span>{"->"}</span></button>
-    <button className="link-button" onClick={async () => { try { setBusy(true); setError(""); await api<any>("/auth/resend-otp", { method:"POST", body:JSON.stringify({ email:pending }) }); } catch (err) { setError(err instanceof Error ? err.message : "Could not resend the code."); } finally { setBusy(false); } }}>Resend code</button>
+    <button className="button primary full" disabled={code.length !== 6 || busy} onClick={async () => { try { setBusy(true); const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); const nextUser = mapUser(data.user); onVerified(nextUser, data.token); sessionStorage.removeItem("rs_pending_email"); navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : tr(language, "Verification failed.", "La verification a echoue.")); } finally { setBusy(false); } }}>{busy ? tr(language, "Verifying...", "Verification...") : tr(language, "Verify and continue", "Verifier et continuer")} <span>{"->"}</span></button>
+    <button className="link-button" onClick={async () => { try { setBusy(true); setError(""); await api<any>("/auth/resend-otp", { method:"POST", body:JSON.stringify({ email:pending }) }); } catch (err) { setError(err instanceof Error ? err.message : tr(language, "Could not resend the code.", "Impossible de renvoyer le code.")); } finally { setBusy(false); } }}>{tr(language, "Resend code", "Renvoyer le code")}</button>
   </div></PublicShell>;
 }
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   const [quote, setQuote] = useState(0);
+  const language = storedLang();
   useEffect(() => {
     const timer = window.setInterval(() => setQuote((value) => (value + 1) % ROTATING_QUOTES.length), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
   const active = ROTATING_QUOTES[quote];
-  return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">Revive your spirit. Renew your day.</p><h2>A calmer place to pray, reflect, and grow with purpose.</h2><p>Daily guidance meets real life, one faithful step at a time.</p></div><div className="aside-verse"><span>Daily reflection</span><q className="fade-quote" key={active.reference}>{active.verse}</q><b>{active.reference}</b></div></div><div className="public-main">{children}</div></main>;
+  return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">{tr(language, "Revive your spirit. Renew your day.", "Ranimez votre esprit. Renouvelez votre journee.")}</p><h2>{tr(language, "A calmer place to pray, reflect, and grow with purpose.", "Un endroit plus paisible pour prier, reflechir et grandir avec intention.")}</h2><p>{tr(language, "Daily guidance meets real life, one faithful step at a time.", "Un accompagnement quotidien pour la vraie vie, un pas fidele a la fois.")}</p></div><div className="aside-verse"><span>{tr(language, "Daily reflection", "Reflexion du jour")}</span><q className="fade-quote" key={active.reference}>{active.verse}</q><b>{active.reference}</b></div></div><div className="public-main">{children}</div></main>;
 }
 
 function OnboardingPage({ language, token, user, onComplete }: { language:Lang; token: string; user: User; onComplete: (user: User) => void }) {
@@ -828,7 +860,7 @@ function AnimatedOptionGrid({ options, selected, select, multi }: { options: str
   return <div className="option-grid">{options.map((option, index) => <button key={option} className={`onboarding-option ${selected.includes(option) ? "selected" : ""}`.trim()} style={{ "--enter-delay": `${220 + (index * 90)}ms` } as CSSProperties} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "OK" : multi ? "[ ]" : "( )"}</i></button>)}</div>;
 }
 
-function MainApp({ user, token, signOut, updateUser, language }: { user: User; token: string; signOut: () => void; updateUser: (user: User | null) => void; language: Lang }) {
+function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { user: User; token: string; signOut: () => void; updateUser: (user: User | null) => void; setLanguage: (language: Lang | null) => void; language: Lang }) {
   const [tab, setTab] = useState<AppTab>("home");
   const [goals, setGoals] = useState<Goal[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
@@ -838,6 +870,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationToast, setNotificationToast] = useState<AppNotification | null>(null);
   const [showReminderPermission, setShowReminderPermission] = useState(() => !localStorage.getItem("rs_background_reminders_choice"));
+  const t = (en: string, fr: string) => tr(language, en, fr);
   const unreadNotifications = notifications.filter(item => !item.readAt).length;
   const surfaceUnreadNotification = (items: AppNotification[]) => {
     const latest = items.find(item => !item.readAt);
@@ -868,7 +901,7 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     const previous = localStorage.getItem(visitKey);
     localStorage.setItem(visitKey, today);
     if (previous !== today && "Notification" in window && window.Notification.permission === "granted") {
-      new window.Notification("Welcome back to ReviveSpring", { body: `Good to see you, ${(user.fullName || "Friend").split(" ")[0]}. God has grace for today.` });
+      new window.Notification(t("Welcome back to ReviveSpring", "Bon retour sur ReviveSpring"), { body: t(`Good to see you, ${(user.fullName || "Friend").split(" ")[0]}. God has grace for today.`, `Heureux de vous revoir, ${(user.fullName || "Friend").split(" ")[0]}. Dieu a une grace pour aujourd'hui.`) });
     }
   };
   const refresh = async () => {
@@ -882,7 +915,9 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
   };
   useEffect(() => {
     api<any>("/auth/me", {}, token).then((currentUser) => {
-      updateUser(mapUser(currentUser));
+      const nextUser = mapUser(currentUser);
+      setLanguage(nextUser.language);
+      updateUser(nextUser);
       markDailyVisit();
       return Promise.all([refresh(), loadNotifications()]);
     }).catch(signOut);
@@ -915,21 +950,21 @@ function MainApp({ user, token, signOut, updateUser, language }: { user: User; t
     checkStreakReminder();
     return () => { document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onActivity); window.removeEventListener("pointerdown", onActivity); window.clearInterval(timer); };
   }, [analytics.currentStreak, user.email, user.timezone]);
-  const navItems = user.isAdmin ? [...NAV_ITEMS, { id: "admin" as const, label: "Admin", icon: <UiIcon name="admin" /> }] : NAV_ITEMS;
-  const title = tab === "support" ? "Customer Care" : tab === "notifications" ? "Notifications" : navItems.find(item => item.id === tab)?.label || "Admin";
-  return <div className="app-shell">{showReminderPermission && <div className="modal-backdrop"><section className="mood-modal reminder-permission-modal"><span className="tile-icon emerald"><UiIcon name="notification" /></span><p className="eyebrow">Personal reminders</p><h2>Keep your ReviveSpring reminders ready?</h2><p>The website does not run continuously in the background. While it is open, it briefly checks for missed account messages and keeps your daily welcome and streak reminders current.</p><div className="permission-actions"><button className="button ghost" onClick={() => { localStorage.setItem("rs_background_reminders_choice", "later"); setShowReminderPermission(false); }}>Not now</button><button className="button primary" onClick={async () => { if ("Notification" in window) await window.Notification.requestPermission(); localStorage.setItem("rs_background_reminders_choice", "allowed"); setShowReminderPermission(false); }}>Allow reminders</button></div></section></div>}<aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{user.plan} plan</small></div></button></aside>
-    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title="Open notifications" aria-label="Open notifications"><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>Alerts</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title="Open customer care" aria-label="Open customer care"><UiIcon name="support" size={19} /><span>Care</span></button><button className="avatar-button" onClick={() => setTab("profile")} title="Open profile"><UserAvatar user={user} className="header-avatar" /></button></div></header>
+  const navItems = navItemsFor(language, !!user.isAdmin);
+  const title = tab === "support" ? t("Customer Care", "Service client") : tab === "notifications" ? t("Notifications", "Notifications") : navItems.find(item => item.id === tab)?.label || t("Admin", "Admin");
+  return <div className="app-shell">{showReminderPermission && <div className="modal-backdrop"><section className="mood-modal reminder-permission-modal"><span className="tile-icon emerald"><UiIcon name="notification" /></span><p className="eyebrow">{t("Personal reminders", "Rappels personnels")}</p><h2>{t("Keep your ReviveSpring reminders ready?", "Garder vos rappels ReviveSpring actifs ?")}</h2><p>{t("The website does not run continuously in the background. While it is open, it briefly checks for missed account messages and keeps your daily welcome and streak reminders current.", "Le site ne fonctionne pas en continu en arriere-plan. Lorsqu'il est ouvert, il verifie brievement les messages de compte manques et maintient vos rappels quotidiens et de serie a jour.")}</p><div className="permission-actions"><button className="button ghost" onClick={() => { localStorage.setItem("rs_background_reminders_choice", "later"); setShowReminderPermission(false); }}>{t("Not now", "Pas maintenant")}</button><button className="button primary" onClick={async () => { if ("Notification" in window) await window.Notification.requestPermission(); localStorage.setItem("rs_background_reminders_choice", "allowed"); setShowReminderPermission(false); }}>{t("Allow reminders", "Autoriser les rappels")}</button></div></section></div>}<aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{`${user.plan} ${t("plan", "forfait")}`}</small></div></button></aside>
+    <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString(language === "fr" ? "fr-FR" : "en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title={t("Open notifications", "Ouvrir les notifications")} aria-label={t("Open notifications", "Ouvrir les notifications")}><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>{t("Alerts", "Alertes")}</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title={t("Open customer care", "Ouvrir le service client")} aria-label={t("Open customer care", "Ouvrir le service client")}><UiIcon name="support" size={19} /><span>{t("Care", "Aide")}</span></button><button className="avatar-button" onClick={() => setTab("profile")} title={t("Open profile", "Ouvrir le profil")}><UserAvatar user={user} className="header-avatar" /></button></div></header>
       {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
       <div className="screen-wrap">
         {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
-        {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} />}
-        {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} />}
-        {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} />}
+        {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} language={language} />}
+        {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} />}
+        {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} language={language} />}
         {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} />}
         {tab === "ai" && <AiScreen user={user} />}
         {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
-        {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} />}
-        {tab === "profile" && <ProfileScreen user={user} token={token} language={language} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
+        {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} language={language} />}
+        {tab === "profile" && <ProfileScreen user={user} token={token} language={language} setLanguage={setLanguage} updateUser={updateUser} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
         {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
       </div>
     </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
@@ -939,23 +974,25 @@ function NavButton({ item, active, onClick }: { item: { label: string; icon: Rea
 function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayers }: { user: User; token:string; goals: Goal[]; analytics:Analytics; refresh:()=>Promise<void>; openAi: () => void; openPrayers: () => void }) {
   const [mood, setMood] = useState<string | null>(null), done = goals.filter(g => g.done).length;
   const [quote, setQuote] = useState(0);
+  const t = (en: string, fr: string) => tr(user.language, en, fr);
   useEffect(() => {
     const timer = window.setInterval(() => setQuote((value) => (value + 1) % ROTATING_QUOTES.length), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
   const activeQuote = ROTATING_QUOTES[quote];
   const firstName = (user.fullName || "Friend").trim().split(" ")[0] || "Friend";
-  return <><section className="welcome-row"><div><p className="eyebrow">A fresh spring for your spirit today</p><h2>Good morning, {firstName}</h2></div><button className="button primary" onClick={openAi}>Ask AI Companion</button></section>
-    <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>Verse of the day</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title="How are you feeling?" subtitle="Choose a feeling for a personal prayer." /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
-      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label="Prayers" onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label="Streak" /><Stat value={`${analytics.visitCount}`} label="Visits" /><Stat value="5" label="Answered" /></div><Panel><SectionTitle title="Today's goals" subtitle={`${done} of ${goals.length} complete`} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
+  return <><section className="welcome-row"><div><p className="eyebrow">{t("A fresh spring for your spirit today", "Une nouvelle source pour votre esprit aujourd'hui")}</p><h2>{t("Good morning", "Bonjour")}, {firstName}</h2></div><button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button></section>
+    <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>{t("Verse of the day", "Verset du jour")}</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title={t("How are you feeling?", "Comment vous sentez-vous ?")} subtitle={t("Choose a feeling for a personal prayer.", "Choisissez un ressenti pour une priere personnelle.")} /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
+      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label={t("Prayers", "Prieres")} onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label={t("Streak", "Serie")} /><Stat value={`${analytics.visitCount}`} label={t("Visits", "Visites")} /><Stat value="5" label={t("Answered", "Exaucees")} /></div><Panel><SectionTitle title={t("Today's goals", "Objectifs du jour")} subtitle={t(`${done} of ${goals.length} complete`, `${done} sur ${goals.length} termines`)} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
 }
-function PrayerScreen({ items, token, refresh, openAi }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void }) { const [active,setActive]=useState<PrayerItem|null>(null); return <><PageIntro title="Prayer Library" subtitle="Saved prayers and guided moments for every season." action={<button className="button primary" onClick={openAi}>Ask AI Companion</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={prayerIdentifier(p)} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
-function JournalScreen({ token, entries, setEntries }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void }) {
-  const [text, setText] = useState(""); return <><PageIntro title="Prayer Journal" subtitle="Record requests, make room for reflection, and celebrate answers." /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder="What are you carrying today?" /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>+ Add entry</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
+function PrayerScreen({ items, token, refresh, openAi, language }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void; language: Lang }) { const [active,setActive]=useState<PrayerItem|null>(null); const t = (en: string, fr: string) => tr(language, en, fr); return <><PageIntro title={t("Prayer Library", "Bibliotheque de prieres")} subtitle={t("Saved prayers and guided moments for every season.", "Prieres enregistrees et moments guides pour chaque saison.")} action={<button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={prayerIdentifier(p)} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
+function JournalScreen({ token, entries, setEntries, language }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void; language: Lang }) {
+  const [text, setText] = useState(""); const t = (en: string, fr: string) => tr(language, en, fr); return <><PageIntro title={t("Prayer Journal", "Journal de priere")} subtitle={t("Record requests, make room for reflection, and celebrate answers.", "Consignez vos demandes, faites de la place pour la reflexion et celebrez les reponses.")} /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("What are you carrying today?", "Que portez-vous aujourd'hui ?")} /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>{t("+ Add entry", "+ Ajouter une entree")}</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
 }
-function GoalsScreen({ token, goals, refresh }: { token:string; goals: Goal[]; refresh:()=>Promise<void> }) {
+function GoalsScreen({ token, goals, refresh, language }: { token:string; goals: Goal[]; refresh:()=>Promise<void>; language: Lang }) {
   const [active,setActive]=useState<Goal|null>(null);
-  return <><PageIntro title="Daily Goals" subtitle="Open each assigned activity and complete the faithful step." /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"OK":"o"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  return <><PageIntro title={t("Daily Goals", "Objectifs quotidiens")} subtitle={t("Open each assigned activity and complete the faithful step.", "Ouvrez chaque activite assignee et accomplissez l'etape fidele.")} /><div className="goal-list">{goals.map(goal => <button className={goal.done ? "goal-row complete" : "goal-row"} key={goal.id} onClick={()=>!goal.done&&setActive(goal)}><span>{goal.done?"OK":"o"}</span><b>{goal.text}</b></button>)}</div>{active&&<GoalModal goal={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>;
 }
 function WellnessScreen({ token, onNavigate }: { token: string; onNavigate: (tab: AppTab) => void }) {
   const [wellness, setWellness] = useState<Wellness>({});
@@ -1061,11 +1098,12 @@ function AiScreen({user}:{user:User}) {
 }
 
 function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: string; onTicketSent: () => Promise<void> }) {
+  const t = (en: string, fr: string) => tr(user.language, en, fr);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: `Hi ${user.fullName.split(" ")[0] || "Friend"}, welcome to ReviveSpring Care. Tell us what you need help with and our team will follow up.` },
+    { role: "assistant", content: t(`Hi ${user.fullName.split(" ")[0] || "Friend"}, welcome to ReviveSpring Care. Tell us what you need help with and our team will follow up.`, `Bonjour ${user.fullName.split(" ")[0] || "ami"}, bienvenue au service ReviveSpring. Dites-nous ce dont vous avez besoin et notre equipe vous repondra.`) },
   ]);
   const [message, setMessage] = useState("");
-  const [subject, setSubject] = useState("Customer care message");
+  const [subject, setSubject] = useState(t("Customer care message", "Message au service client"));
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const sendMessage = async (event: FormEvent) => {
@@ -1075,20 +1113,21 @@ function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: 
     setBusy(true);
     try {
       await api<SupportTicket>("/support/tickets", { method: "POST", body: JSON.stringify({ subject, message: value }) }, token);
-      setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: "Message received. Customer care can now view this in the admin dashboard and reply to your account." }]);
+      setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: t("Message received. Customer care can now view this in the admin dashboard and reply to your account.", "Message recu. Le service client peut maintenant le voir dans le tableau admin et repondre a votre compte.") }]);
       setMessage("");
       setSent(true);
       await onTicketSent();
     } catch (err) {
-      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : "We could not send this message right now." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : t("We could not send this message right now.", "Nous ne pouvons pas envoyer ce message pour le moment.") }]);
     } finally {
       setBusy(false);
     }
   };
-  return <><PageIntro title="Customer Care" subtitle="A calm support space for account, prayer, billing, and app questions." action={<span className="care-status"><i /> Support desk online</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>We are here to help you keep growing.</h2><p>Drop a message below. Your account information will be attached so admins can review and reply directly.</p></div></Panel><div className="care-quick-list"><article><b>Account help</b><p>Login, Google sign-in, profile, and language settings.</p></article><article><b>Prayer support</b><p>Library, daily prayers, wellness score, and saved records.</p></article><article><b>Billing care</b><p>Premium access, plan questions, and payment follow-up.</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">Support ticket created for {user.email}.</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><input value={subject} onChange={event => setSubject(event.target.value)} placeholder="Subject" /><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="Write your message to customer care..." /><button className="button primary" disabled={!message.trim() || busy}>{busy ? "Sending..." : "Send message"}</button></form></Panel></>;
+  return <><PageIntro title={t("Customer Care", "Service client")} subtitle={t("A calm support space for account, prayer, billing, and app questions.", "Un espace d'aide paisible pour les questions de compte, de priere, de facturation et d'application.")} action={<span className="care-status"><i /> {t("Support desk online", "Assistance en ligne")}</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>{t("We are here to help you keep growing.", "Nous sommes la pour vous aider a continuer de grandir.")}</h2><p>{t("Drop a message below. Your account information will be attached so admins can review and reply directly.", "Laissez un message ci-dessous. Les informations de votre compte seront jointes afin que les administrateurs puissent examiner et repondre directement.")}</p></div></Panel><div className="care-quick-list"><article><b>{t("Account help", "Aide au compte")}</b><p>{t("Login, Google sign-in, profile, and language settings.", "Connexion, Google sign-in, profil et parametres de langue.")}</p></article><article><b>{t("Prayer support", "Aide a la priere")}</b><p>{t("Library, daily prayers, wellness score, and saved records.", "Bibliotheque, prieres quotidiennes, score de bien-etre et enregistrements sauvegardes.")}</p></article><article><b>{t("Billing care", "Aide a la facturation")}</b><p>{t("Premium access, plan questions, and payment follow-up.", "Acces premium, questions sur le forfait et suivi des paiements.")}</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">{t(`Support ticket created for ${user.email}.`, `Ticket d'assistance cree pour ${user.email}.`)}</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><input value={subject} onChange={event => setSubject(event.target.value)} placeholder={t("Subject", "Sujet")} /><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder={t("Write your message to customer care...", "Ecrivez votre message au service client...")} /><button className="button primary" disabled={!message.trim() || busy}>{busy ? t("Sending...", "Envoi...") : t("Send message", "Envoyer le message")}</button></form></Panel></>;
 }
 
-function NotificationScreen({ token, notifications, refresh }: { token: string; notifications: AppNotification[]; refresh: () => Promise<void> }) {
+function NotificationScreen({ token, notifications, refresh, language }: { token: string; notifications: AppNotification[]; refresh: () => Promise<void>; language: Lang }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
   const markAll = async () => {
     await api("/notifications/read-all", { method: "POST" }, token);
     await refresh();
@@ -1098,30 +1137,65 @@ function NotificationScreen({ token, notifications, refresh }: { token: string; 
     await api(`/notifications/${item.id}/read`, { method: "PATCH" }, token);
     await refresh();
   };
-  return <><PageIntro title="Notifications" subtitle="Security alerts, customer-care replies, and account updates." action={<button className="button secondary" onClick={markAll}>Mark all read</button>} /><div className="notification-list">{notifications.length ? notifications.map(item => <button className={`notification-card ${item.readAt ? "" : "unread"}`.trim()} key={item.id} onClick={() => markOne(item)}><span className="notification-mark"><UiIcon name={item.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{item.title}</b><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()} {item.readAt ? "/ read" : "/ unread"}</small></div></button>) : <Panel><SectionTitle title="No notifications yet" subtitle="Security alerts and customer care replies will appear here." /></Panel>}</div></>;
+  return <><PageIntro title={t("Notifications", "Notifications")} subtitle={t("Security alerts, customer-care replies, and account updates.", "Alertes de securite, reponses du service client et mises a jour du compte.")} action={<button className="button secondary" onClick={markAll}>{t("Mark all read", "Tout marquer comme lu")}</button>} /><div className="notification-list">{notifications.length ? notifications.map(item => <button className={`notification-card ${item.readAt ? "" : "unread"}`.trim()} key={item.id} onClick={() => markOne(item)}><span className="notification-mark"><UiIcon name={item.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{item.title}</b><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()} {item.readAt ? t("/ read", "/ lu") : t("/ unread", "/ non lu")}</small></div></button>) : <Panel><SectionTitle title={t("No notifications yet", "Aucune notification pour le moment")} subtitle={t("Security alerts and customer care replies will appear here.", "Les alertes de securite et les reponses du service client apparaitront ici.")} /></Panel>}</div></>;
 }
 
-function ProfileScreen({ user, token, language, signOut, onDeleted, openAdmin }: { user: User; token: string; language: Lang; signOut: () => void; onDeleted: () => void; openAdmin?: () => void }) {
-  const [emails, setEmails] = useState(true);
+function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut, onDeleted, openAdmin }: { user: User; token: string; language: Lang; setLanguage: (language: Lang | null) => void; updateUser: (user: User | null) => void; signOut: () => void; onDeleted: () => void; openAdmin?: () => void }) {
+  const [emails, setEmails] = useState(user.dailyEmailEnabled !== false);
+  const [pushEnabled, setPushEnabled] = useState(user.pushNotificationsEnabled !== false);
+  const [selectedLanguage, setSelectedLanguage] = useState<Lang>(language);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteFeedback, setDeleteFeedback] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const t = (en: string, fr: string) => tr(selectedLanguage, en, fr);
+  useEffect(() => {
+    setEmails(user.dailyEmailEnabled !== false);
+    setPushEnabled(user.pushNotificationsEnabled !== false);
+    setSelectedLanguage(language);
+  }, [user, language]);
+  const saveProfile = async (changes: Partial<Pick<User, "language" | "dailyEmailEnabled" | "pushNotificationsEnabled">>) => {
+    setSavingSettings(true);
+    try {
+      const data = await api<any>("/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          language: changes.language ?? selectedLanguage,
+          dailyEmailEnabled: changes.dailyEmailEnabled ?? emails,
+          pushNotificationsEnabled: changes.pushNotificationsEnabled ?? pushEnabled,
+          timezone: user.timezone || detectTimezone(),
+          reminderHour: typeof user.reminderHour === "number" ? user.reminderHour : 9,
+          reminderMinute: typeof user.reminderMinute === "number" ? user.reminderMinute : 0,
+        }),
+      }, token);
+      const nextUser = mapUser(data.user || data);
+      setLanguage(nextUser.language);
+      updateUser(nextUser);
+      setSelectedLanguage(nextUser.language);
+      setEmails(nextUser.dailyEmailEnabled !== false);
+      setPushEnabled(nextUser.pushNotificationsEnabled !== false);
+      localStorage.setItem("rs_language", nextUser.language);
+      localStorage.setItem("rs_user", JSON.stringify(nextUser));
+    } finally {
+      setSavingSettings(false);
+    }
+  };
   const deleteAccount = async () => {
     if (!deleteReason.trim() || !deleteFeedback.trim() || deleting) return;
-    if (!window.confirm("Delete your account and all related records? This cannot be undone.")) return;
+    if (!window.confirm(t("Delete your account and all related records? This cannot be undone.", "Supprimer votre compte et toutes les donnees associees ? Cette action est irreversible."))) return;
     setDeleting(true);
     setDeleteError("");
     try {
       await api("/auth/me", { method: "DELETE", body: JSON.stringify({ reason: deleteReason.trim(), feedback: deleteFeedback.trim() }) }, token);
       onDeleted();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Could not delete your account.");
+      setDeleteError(err instanceof Error ? err.message : t("Could not delete your account.", "Impossible de supprimer votre compte."));
     } finally {
       setDeleting(false);
     }
   };
-  return <><PageIntro title="My Profile" subtitle="Personal settings, account care, and testimony." /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} PLAN</p></div></div><div className="profile-line"><span>Email</span><b>{user.email}</b></div><div className="profile-line"><span>Language</span><b>{LANG_LABELS[language]}</b></div><div className="profile-line"><span>Sign-in method</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>Preferences</h3><label className="switch-row"><div><b>Daily prayer emails</b><p>Receive a personalized prayer every day.</p></div><input type="checkbox" checked={emails} onChange={() => setEmails(!emails)} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>Open admin dashboard</button>}<button className="button danger" onClick={signOut}>Sign out</button></div></Panel><Panel><h3>Delete account</h3><p>Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Short reason for leaving" /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder="What made you decide to delete your account?" rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? "Deleting account..." : "Delete my account"}</button></Panel></div></>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel></div></>;
 }
 
 const ADMIN_SECTIONS = [
