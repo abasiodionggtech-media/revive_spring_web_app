@@ -45,6 +45,20 @@ type ReminderSettings = {
   dailyEmailEnabled: boolean;
   pushNotificationsEnabled: boolean;
 };
+type MonetizationStatus = {
+  plan: string;
+  isPremium: boolean;
+  isAdmin: boolean;
+  pricing?: { labelEn?: string; labelFr?: string; amountNgn?: number; googlePlayProductId?: string };
+  ads?: {
+    enabled?: boolean;
+    bannerEnabled?: boolean;
+    aiUnlockEnabled?: boolean;
+    banner?: { titleEn?: string; titleFr?: string; bodyEn?: string; bodyFr?: string; ctaEn?: string; ctaFr?: string };
+    aiGate?: { titleEn?: string; titleFr?: string; bodyEn?: string; bodyFr?: string; ctaEn?: string; ctaFr?: string };
+  };
+  ai?: { maxDailyUses?: number; usedToday?: number; remainingToday?: number; requiresAdUnlock?: boolean };
+};
 
 class ApiError extends Error {
   status: number;
@@ -868,9 +882,12 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
   const [verse, setVerse] = useState({ verse:"I can do all things through Christ who strengthens me.", reference:"Philippians 4:13" });
   const [library, setLibrary] = useState<PrayerItem[]>(PRAYER_LIBRARY);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [monetization, setMonetization] = useState<MonetizationStatus | null>(null);
   const [notificationToast, setNotificationToast] = useState<AppNotification | null>(null);
   const [showReminderPermission, setShowReminderPermission] = useState(() => !localStorage.getItem("rs_background_reminders_choice"));
   const t = (en: string, fr: string) => tr(language, en, fr);
+  const isPremiumUser = !!user.isAdmin || user.plan === "premium";
+  const showAds = !!monetization && !isPremiumUser && monetization?.ads?.enabled !== false && monetization?.ads?.bannerEnabled !== false;
   const unreadNotifications = notifications.filter(item => !item.readAt).length;
   const surfaceUnreadNotification = (items: AppNotification[]) => {
     const latest = items.find(item => !item.readAt);
@@ -913,14 +930,22 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
     setAnalytics(analyticsData); setVerse(verseData);
     if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, identifier:item.identifier || item.id, title:item.titleEn, body:item.prayerEn, icon:<MoodIcon name="heart" />, tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
   };
+  const loadMonetization = async () => {
+    try {
+      const data = await api<MonetizationStatus>("/monetization/status", {}, token);
+      setMonetization(data);
+    } catch {
+      setMonetization(null);
+    }
+  };
   useEffect(() => {
-    api<any>("/auth/me", {}, token).then((currentUser) => {
-      const nextUser = mapUser(currentUser);
-      setLanguage(nextUser.language);
-      updateUser(nextUser);
-      markDailyVisit();
-      return Promise.all([refresh(), loadNotifications()]);
-    }).catch(signOut);
+      api<any>("/auth/me", {}, token).then((currentUser) => {
+        const nextUser = mapUser(currentUser);
+        setLanguage(nextUser.language);
+        updateUser(nextUser);
+        markDailyVisit();
+        return Promise.all([refresh(), loadNotifications(), loadMonetization()]);
+      }).catch(signOut);
   }, []);
   useEffect(() => {
     const timer = window.setInterval(() => { void loadNotifications(); }, 4 * 60 * 60 * 1000);
@@ -954,19 +979,20 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
   const title = tab === "support" ? t("Customer Care", "Service client") : tab === "notifications" ? t("Notifications", "Notifications") : navItems.find(item => item.id === tab)?.label || t("Admin", "Admin");
   return <div className="app-shell">{showReminderPermission && <div className="modal-backdrop"><section className="mood-modal reminder-permission-modal"><span className="tile-icon emerald"><UiIcon name="notification" /></span><p className="eyebrow">{t("Personal reminders", "Rappels personnels")}</p><h2>{t("Keep your ReviveSpring reminders ready?", "Garder vos rappels ReviveSpring actifs ?")}</h2><p>{t("The website does not run continuously in the background. While it is open, it briefly checks for missed account messages and keeps your daily welcome and streak reminders current.", "Le site ne fonctionne pas en continu en arriere-plan. Lorsqu'il est ouvert, il verifie brievement les messages de compte manques et maintient vos rappels quotidiens et de serie a jour.")}</p><div className="permission-actions"><button className="button ghost" onClick={() => { localStorage.setItem("rs_background_reminders_choice", "later"); setShowReminderPermission(false); }}>{t("Not now", "Pas maintenant")}</button><button className="button primary" onClick={async () => { if ("Notification" in window) await window.Notification.requestPermission(); localStorage.setItem("rs_background_reminders_choice", "allowed"); setShowReminderPermission(false); }}>{t("Allow reminders", "Autoriser les rappels")}</button></div></section></div>}<aside className="sidebar"><Brand /><nav>{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav><button className="sidebar-profile" onClick={() => setTab("profile")}><UserAvatar user={user} className="sidebar-avatar" /><div><b>{user.fullName}</b><small>{`${user.plan} ${t("plan", "forfait")}`}</small></div></button></aside>
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString(language === "fr" ? "fr-FR" : "en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title={t("Open notifications", "Ouvrir les notifications")} aria-label={t("Open notifications", "Ouvrir les notifications")}><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>{t("Alerts", "Alertes")}</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title={t("Open customer care", "Ouvrir le service client")} aria-label={t("Open customer care", "Ouvrir le service client")}><UiIcon name="support" size={19} /><span>{t("Care", "Aide")}</span></button><button className="avatar-button" onClick={() => setTab("profile")} title={t("Open profile", "Ouvrir le profil")}><UserAvatar user={user} className="header-avatar" /></button></div></header>
-      {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
-      <div className="screen-wrap">
-        {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
-        {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} language={language} />}
-        {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} />}
-        {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} language={language} />}
-        {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} />}
-        {tab === "ai" && <AiScreen user={user} />}
-        {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
-        {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} language={language} />}
-        {tab === "profile" && <ProfileScreen user={user} token={token} language={language} setLanguage={setLanguage} updateUser={updateUser} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} />}
-        {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
-      </div>
+        {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
+        <div className="screen-wrap">
+          {showAds && tab !== "ai" && <Panel className="ad-banner-panel"><div className="ad-banner-copy"><p className="eyebrow">{t("Sponsored", "Sponsorise")}</p><h3>{language === "fr" ? monetization?.ads?.banner?.titleFr || "Passez premium sur ReviveSpring" : monetization?.ads?.banner?.titleEn || "Upgrade to ReviveSpring Premium"}</h3><p>{language === "fr" ? monetization?.ads?.banner?.bodyFr || "Retirez les pubs et profitez d'un acces premium sans interruption." : monetization?.ads?.banner?.bodyEn || "Remove ads and enjoy uninterrupted premium access."}</p></div><button className="button secondary">{language === "fr" ? monetization?.ads?.banner?.ctaFr || "Passer premium sur Android" : monetization?.ads?.banner?.ctaEn || "Upgrade on Android"}</button></Panel>}
+          {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
+          {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} language={language} />}
+          {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} />}
+          {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} language={language} />}
+          {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} />}
+          {tab === "ai" && <AiScreen user={user} token={token} monetization={monetization} refreshMonetization={loadMonetization} />}
+          {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
+          {tab === "notifications" && <NotificationScreen token={token} notifications={notifications} refresh={loadNotifications} language={language} />}
+          {tab === "profile" && <ProfileScreen user={user} token={token} language={language} setLanguage={setLanguage} updateUser={updateUser} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} monetization={monetization} />}
+          {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
+        </div>
     </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
 }
 
@@ -987,7 +1013,10 @@ function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayer
 }
 function PrayerScreen({ items, token, refresh, openAi, language }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void; language: Lang }) { const [active,setActive]=useState<PrayerItem|null>(null); const t = (en: string, fr: string) => tr(language, en, fr); return <><PageIntro title={t("Prayer Library", "Bibliotheque de prieres")} subtitle={t("Saved prayers and guided moments for every season.", "Prieres enregistrees et moments guides pour chaque saison.")} action={<button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={prayerIdentifier(p)} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
 function JournalScreen({ token, entries, setEntries, language }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void; language: Lang }) {
-  const [text, setText] = useState(""); const t = (en: string, fr: string) => tr(language, en, fr); return <><PageIntro title={t("Prayer Journal", "Journal de priere")} subtitle={t("Record requests, make room for reflection, and celebrate answers.", "Consignez vos demandes, faites de la place pour la reflexion et celebrez les reponses.")} /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("What are you carrying today?", "Que portez-vous aujourd'hui ?")} /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setText(""); } }}>{t("+ Add entry", "+ Ajouter une entree")}</button></Panel><div className="entry-list">{entries.map(entry => <Panel key={entry.id}><small>{entry.date}</small><p>{entry.body}</p></Panel>)}</div></>;
+  const [text, setText] = useState("");
+  const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  return <><PageIntro title={t("Prayer Journal", "Journal de priere")} subtitle={t("Record requests, make room for reflection, and celebrate answers.", "Consignez vos demandes, faites de la place pour la reflexion et celebrez les reponses.")} /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("What are you carrying today?", "Que portez-vous aujourd'hui ?")} /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setOpenEntryId(entry.id); setText(""); } }}>{t("+ Add entry", "+ Ajouter une entree")}</button></Panel><div className="entry-list">{entries.map(entry => { const isOpen = openEntryId === entry.id; const preview = entry.body.length > 120 ? `${entry.body.slice(0, 120)}...` : entry.body; return <Panel key={entry.id} className={`journal-entry-card ${isOpen ? "open" : ""}`.trim()}><button type="button" className="journal-entry-toggle" onClick={() => setOpenEntryId(current => current === entry.id ? null : entry.id)}><div><small>{entry.date}</small><p className="journal-entry-preview">{isOpen ? entry.body : preview}</p></div><span className="journal-entry-arrow" aria-hidden="true">{isOpen ? "−" : "+"}</span></button>{isOpen && <div className="journal-entry-expanded"><p>{entry.body}</p></div>}</Panel>; })}</div></>;
 }
 function GoalsScreen({ token, goals, refresh, language }: { token:string; goals: Goal[]; refresh:()=>Promise<void>; language: Lang }) {
   const [active,setActive]=useState<Goal|null>(null);
@@ -1016,8 +1045,9 @@ function WellnessScreen({ token, onNavigate }: { token: string; onNavigate: (tab
   ];
   return <><PageIntro title="Spiritual Wellness" subtitle="AI-guided faith health from onboarding and daily progress." /><div className="wellness-grid"><Panel className="score-panel wellness-score-card"><div className="score-ring" style={{ background: `conic-gradient(var(--emerald) 0 ${wellness.overall ?? 0}%,#e8f1ee ${wellness.overall ?? 0}% 100%)` }}><span>{wellness.overall ?? 0}%</span></div><div><p className="eyebrow">Your wellness score</p><h2>Growing steadily</h2><p>{wellness.insight ?? "Your score updates as you pray, journal, complete goals, and build consistency."}</p></div></Panel><div className="metric-grid wellness-metrics">{Object.entries(details).map(([key, item]) => <Stat key={key} value={`${item.score}%`} label={item.title} active={active === key} onClick={() => setActive(key)} />)}</div></div><Panel className="wellness-detail"><span className={`tile-icon ${selected.tone}`}>{selected.icon}</span><div><p className="eyebrow">Selected insight</p><h3>{selected.title}</h3><p>{selected.summary}</p><div className="wellness-signal-list">{selected.signals.map(signal => <button type="button" key={signal} onClick={() => onNavigate(selected.target)}>{signal}</button>)}</div><button type="button" className="action-step wellness-action" onClick={() => onNavigate(selected.target)}><b>Next step</b>{selected.next}<span>{"->"}</span></button></div></Panel><PrayerTile title="Guided Affirmations" body="Open five faith-filled declarations for peace, restoration, courage, and hope." icon={<MoodIcon name="sparkle" />} tone="green" onOpen={() => setShowAffirmations(true)} />{showAffirmations && <div className="modal-backdrop" onClick={() => setShowAffirmations(false)}><section className="mood-modal affirmation-modal" onClick={event => event.stopPropagation()}><button className="modal-close prayer-close" onClick={() => setShowAffirmations(false)} aria-label="Close affirmations"><ClosePrayerIcon /></button><span className="tile-icon green"><MoodIcon name="sparkle" /></span><p className="eyebrow">Speak life over your day</p><h2>Guided Affirmations</h2><p>Read each declaration slowly. Pause after every line and let the words settle in your heart.</p><div className="affirmation-list">{affirmations.map((text, index) => <article key={text}><span>{String(index + 1).padStart(2, "0")}</span><p>{text}</p></article>)}</div></section></div>}</>;
 }
-function AiScreen({user}:{user:User}) {
-  const initialMessage: ChatMessage = { role: "assistant", content: "Hello. I am your Bible and prayer AI. Ask me for a prayer, verse, or encouragement." };
+function AiScreen({ user, token, monetization, refreshMonetization }: { user: User; token: string; monetization: MonetizationStatus | null; refreshMonetization: () => Promise<void> }) {
+  const t = (en: string, fr: string) => tr(user.language, en, fr);
+  const initialMessage: ChatMessage = { role: "assistant", content: t("Hello. I am your Bible and prayer AI. Ask me for a prayer, verse, or encouragement.", "Bonjour. Je suis votre IA biblique et de priere. Demandez-moi une priere, un verset ou un encouragement.") };
   const defaultSessionId = `rs-user-${user.email.toLowerCase()}`;
   const [sessionId, setSessionId] = useState(defaultSessionId);
   const [sessions, setSessions] = useState<{ sessionId: string; updatedAt: string; preview: string }[]>([]);
@@ -1025,10 +1055,23 @@ function AiScreen({user}:{user:User}) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [aiStatus, setAiStatus] = useState<MonetizationStatus | null>(monetization);
+  const [rewardGateOpen, setRewardGateOpen] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
+  const isPremiumUser = !!user.isAdmin || user.plan === "premium";
+
+  useEffect(() => { setAiStatus(monetization); }, [monetization]);
+  useEffect(() => {
+    if (!rewardGateOpen) return;
+    setCountdown(5);
+    const timer = window.setInterval(() => setCountdown(value => value <= 1 ? 0 : value - 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [rewardGateOpen]);
 
   const loadSessions = async () => {
     try {
-      const data = await api<any>(`/ai/sessions?userEmail=${encodeURIComponent(user.email)}`);
+      const data = await api<any>("/ai/sessions", {}, token);
       setSessions(Array.isArray(data?.sessions) ? data.sessions : []);
     } catch {
       setSessions([]);
@@ -1038,7 +1081,7 @@ function AiScreen({user}:{user:User}) {
   const loadHistory = async (nextSessionId: string) => {
     setHistoryLoading(true);
     try {
-      const data = await api<any>(`/ai/history?sessionId=${encodeURIComponent(nextSessionId)}&userEmail=${encodeURIComponent(user.email)}`);
+      const data = await api<any>(`/ai/history?sessionId=${encodeURIComponent(nextSessionId)}`, {}, token);
       const rows = Array.isArray(data?.messages) ? data.messages : [];
       if (!rows.length) setMessages([initialMessage]);
       else {
@@ -1067,9 +1110,7 @@ function AiScreen({user}:{user:User}) {
     setInput("");
   };
 
-  const send = async (suggestion?: string) => {
-    const value = (suggestion || input).trim();
-    if (!value || typing) return;
+  const performSend = async (value: string, unlockToken?: string) => {
     const history = [...messages, { role: "user" as const, content: value }];
     setMessages(history);
     setInput("");
@@ -1082,19 +1123,57 @@ function AiScreen({user}:{user:User}) {
           sessionId,
           language: user.language,
           userEmail: user.email,
+          unlockToken,
           history: history.map(m => ({ role: m.role === "assistant" ? "model" : "user", content: m.content })),
         }),
-      });
+      }, token);
       setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
       await loadSessions();
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "I could not connect right now. Please try again shortly." }]);
+      await refreshMonetization();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("I could not connect right now. Please try again shortly.", "Je ne peux pas me connecter pour le moment. Veuillez reessayer bientot.");
+      setMessages(prev => [...prev, { role: "assistant", content: message }]);
+      await refreshMonetization();
     } finally {
       setTyping(false);
     }
   };
 
-  return <><PageIntro title="AI Prayer Companion" subtitle="A signed-in space for prayer, Scripture, and reflection." /><div className="suggestions">{["Give me a prayer for anxiety", "Bible verse for strength", "Prayer for healing", "How can I strengthen my faith?"].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>New conversation</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || "Conversation"}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">Loading previous conversation...</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">Writing a thoughtful response...</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about Bible or prayer" /><button className="button primary" onClick={() => send()}>Send</button></div></Panel></>;
+  const send = async (suggestion?: string) => {
+    const value = (suggestion || input).trim();
+    if (!value || typing) return;
+    if (!isPremiumUser) {
+      const remaining = aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0;
+      if (remaining <= 0) {
+        setMessages(prev => [...prev, { role: "assistant", content: t("You have used all 5 free AI sessions for today. Please come back tomorrow or upgrade to Premium.", "Vous avez utilise vos 5 sessions IA gratuites pour aujourd hui. Revenez demain ou passez a Premium.") }]);
+        return;
+      }
+      setQueuedMessage(value);
+      setInput("");
+      setRewardGateOpen(true);
+      return;
+    }
+    await performSend(value);
+  };
+
+  const claimAdAndContinue = async () => {
+    if (!queuedMessage) return;
+    try {
+      const unlock = await api<any>("/monetization/ai/unlock", { method: "POST", body: JSON.stringify({}) }, token);
+      setAiStatus(current => current ? { ...current, ai: { ...current.ai, ...unlock } } : current);
+      setRewardGateOpen(false);
+      const message = queuedMessage;
+      setQueuedMessage(null);
+      await performSend(message, unlock.unlockToken);
+    } catch (err) {
+      setRewardGateOpen(false);
+      setQueuedMessage(null);
+      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : t("AI access is unavailable right now.", "L acces IA est indisponible pour le moment.") }]);
+      await refreshMonetization();
+    }
+  };
+
+  return <><PageIntro title={t("AI Prayer Companion", "Assistant de priere IA")} subtitle={t("A signed-in space for prayer, Scripture, and reflection.", "Un espace connecte pour la priere, l Ecriture et la reflexion.")} />{!isPremiumUser && <Panel className="ai-access-panel"><h3>{t("Free AI access", "Acces IA gratuit")}</h3><p>{t("Watch one short ad before each AI use. Daily limit: 5.", "Regardez une courte pub avant chaque utilisation de l IA. Limite quotidienne : 5.")}</p><b>{t(`Remaining today: ${aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0}`, `Restant aujourd hui : ${aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0}`)}</b></Panel>}<div className="suggestions">{[t("Give me a prayer for anxiety", "Donne-moi une priere contre l anxiete"), t("Bible verse for strength", "Verset biblique pour la force"), t("Prayer for healing", "Priere pour la guerison"), t("How can I strengthen my faith?", "Comment puis-je fortifier ma foi ?")].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>{t("New conversation", "Nouvelle conversation")}</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || t("Conversation", "Conversation")}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">{t("Loading previous conversation...", "Chargement de la conversation precedente...")}</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">{t("Writing a thoughtful response...", "Redaction d une reponse...")}</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder={t("Ask about Bible or prayer", "Posez une question sur la Bible ou la priere")} /><button className="button primary" onClick={() => send()}>{t("Send", "Envoyer")}</button></div></Panel>{rewardGateOpen && <div className="modal-backdrop"><section className="mood-modal ai-reward-modal"><p className="eyebrow">{t("Sponsored access", "Acces sponsorise")}</p><h2>{user.language === "fr" ? monetization?.ads?.aiGate?.titleFr || "Regardez cette courte pub pour utiliser l IA" : monetization?.ads?.aiGate?.titleEn || "Watch this short ad to use AI"}</h2><p>{user.language === "fr" ? monetization?.ads?.aiGate?.bodyFr || "Les utilisateurs gratuits peuvent debloquer une conversation IA en regardant un court message sponsorise." : monetization?.ads?.aiGate?.bodyEn || "Free users can unlock one AI conversation by watching a short sponsor message."}</p><Panel className="ai-sponsor-card"><b>ReviveSpring Premium</b><p>{t("No ads. More peace. Full access.", "Pas de pubs. Plus de paix. Acces complet.")}</p></Panel><div className="permission-actions"><button className="button ghost" onClick={() => { setRewardGateOpen(false); setQueuedMessage(null); }}>{t("Cancel", "Annuler")}</button><button className="button primary" disabled={countdown > 0} onClick={claimAdAndContinue}>{countdown > 0 ? t(`Continue in ${countdown}s`, `Continuer dans ${countdown}s`) : (user.language === "fr" ? monetization?.ads?.aiGate?.ctaFr || "Continuer vers l IA" : monetization?.ads?.aiGate?.ctaEn || "Continue to AI")}</button></div></section></div>}</>;
 }
 
 function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: string; onTicketSent: () => Promise<void> }) {
@@ -1140,7 +1219,7 @@ function NotificationScreen({ token, notifications, refresh, language }: { token
   return <><PageIntro title={t("Notifications", "Notifications")} subtitle={t("Security alerts, customer-care replies, and account updates.", "Alertes de securite, reponses du service client et mises a jour du compte.")} action={<button className="button secondary" onClick={markAll}>{t("Mark all read", "Tout marquer comme lu")}</button>} /><div className="notification-list">{notifications.length ? notifications.map(item => <button className={`notification-card ${item.readAt ? "" : "unread"}`.trim()} key={item.id} onClick={() => markOne(item)}><span className="notification-mark"><UiIcon name={item.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{item.title}</b><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()} {item.readAt ? t("/ read", "/ lu") : t("/ unread", "/ non lu")}</small></div></button>) : <Panel><SectionTitle title={t("No notifications yet", "Aucune notification pour le moment")} subtitle={t("Security alerts and customer care replies will appear here.", "Les alertes de securite et les reponses du service client apparaitront ici.")} /></Panel>}</div></>;
 }
 
-function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut, onDeleted, openAdmin }: { user: User; token: string; language: Lang; setLanguage: (language: Lang | null) => void; updateUser: (user: User | null) => void; signOut: () => void; onDeleted: () => void; openAdmin?: () => void }) {
+function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut, onDeleted, openAdmin, monetization }: { user: User; token: string; language: Lang; setLanguage: (language: Lang | null) => void; updateUser: (user: User | null) => void; signOut: () => void; onDeleted: () => void; openAdmin?: () => void; monetization: MonetizationStatus | null }) {
   const [emails, setEmails] = useState(user.dailyEmailEnabled !== false);
   const [pushEnabled, setPushEnabled] = useState(user.pushNotificationsEnabled !== false);
   const [selectedLanguage, setSelectedLanguage] = useState<Lang>(language);
@@ -1195,7 +1274,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setDeleting(false);
     }
   };
-  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{user.plan.toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel></div></>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note"><b>{language === "fr" ? monetization?.pricing?.labelFr || "50 nairas / mois" : monetization?.pricing?.labelEn || "50 naira / month"}</b><p>{t("Google Play product", "Produit Google Play")}: {monetization?.pricing?.googlePlayProductId || "revivespring_premium_monthly"}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel></div></>;
 }
 
 const ADMIN_SECTIONS = [
@@ -1369,7 +1448,7 @@ function AdminControlCenter({ token }: { token: string }) {
     {section === "subscriptions" && <div className="admin-section-grid">
       <Panel><SectionTitle title="Subscription management" subtitle="Upgrade or downgrade users manually." /><AdminUserList users={users} actions={(user) => <button onClick={() => updateUser(user.id, "/plan", { plan: user.subscriptionStatus === "premium" ? "free" : "premium" }, "Plan updated.")}>{user.subscriptionStatus === "premium" ? "Downgrade" : "Upgrade"}</button>} /></Panel>
       <AdminModule title="Revenue reports" body="Use settings to store Stripe and RevenueCat links or report notes until payment webhooks are connected." items={[`Stripe: ${settingsMap.stripe_dashboard_url || "Not set"}`, `RevenueCat: ${settingsMap.revenuecat_dashboard_url || "Not set"}`, `Monthly note: ${settingsMap.monthly_revenue_note || "Not set"}`]} />
-      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note", "subscription_price_ngn", "subscription_price_label_en", "subscription_price_label_fr", "subscription_google_play_product_id", "ads_enabled", "ads_banner_enabled", "ai_ad_unlock_enabled", "ai_ad_daily_limit", "ad_banner_title_en", "ad_banner_title_fr", "ad_banner_body_en", "ad_banner_body_fr", "ad_banner_cta_en", "ad_banner_cta_fr", "ai_ad_title_en", "ai_ad_title_fr", "ai_ad_body_en", "ai_ad_body_fr", "ai_ad_cta_en", "ai_ad_cta_fr"]} settings={settingsMap} onSave={saveSetting} /></Panel>
     </div>}
 
     {section === "communication" && <div className="admin-section-grid">

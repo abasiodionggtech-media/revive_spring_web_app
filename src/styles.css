@@ -25,6 +25,14 @@
 .ai-history-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}.ai-session-chip{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);font-size:.82rem;font-weight:700}.ai-session-chip.active{background:#e9f3ef;color:var(--emerald);border-color:#b8d2c9}
 .message{font-size:1rem;line-height:1.6;padding:13px 15px}
 .typing{font-size:.92rem}
+.ad-banner-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;background:linear-gradient(135deg,#fff,#f3f8f6)}
+.ad-banner-copy{display:grid;gap:6px}
+.ad-banner-copy h3{color:var(--emerald)}
+.ai-access-panel{display:grid;gap:6px;margin-bottom:14px;background:linear-gradient(145deg,#fff,#f5f9f7)}
+.ai-access-panel b{color:var(--emerald)}
+.ai-sponsor-card{margin:8px 0 0;background:linear-gradient(145deg,#fff,#f5f9f7)}
+.profile-premium-note{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
+.profile-premium-note b{color:var(--emerald)}
 .mood-button-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:10px;background:#e8f2ee;color:var(--emerald)}
 .mood-button-icon.sky,.tile-icon.sky{background:#e8f6f6;color:#2d8f9b}
 .mood-button-icon.gold,.tile-icon.gold{background:#fbf5df;color:#a87916}
@@ -98,3 +106,12 @@
 .support-ticket-row textarea{min-height:82px;margin-top:8px;resize:vertical}
 @media(max-width:900px){.support-button span{display:none}.support-button{width:42px;justify-content:center;padding:0}.care-grid{grid-template-columns:1fr}.care-hero{grid-template-columns:1fr}.prayer-tile{grid-template-columns:auto 1fr auto!important}.prayer-arrow{display:grid!important}}
 @media(max-width:560px){.header-actions{gap:8px}.care-status{justify-self:start}.care-messages{min-height:260px}.care-quick-list article{padding:15px}.prayer-tile{padding:16px}.prayer-arrow{width:30px;height:30px}}
+
+.journal-entry-card{padding:0;overflow:hidden}
+.journal-entry-card.open{border-color:#bfd4cc;box-shadow:0 10px 24px rgba(14,75,62,.08)}
+.journal-entry-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;width:100%;padding:18px;background:#fff;text-align:left;color:var(--ink)}
+.journal-entry-toggle p{color:var(--ink)}
+.journal-entry-preview{margin-top:2px}
+.journal-entry-arrow{display:grid;place-items:center;min-width:34px;height:34px;border-radius:50%;background:var(--soft);color:var(--emerald);font-size:1.3rem;font-weight:800;line-height:1}
+.journal-entry-expanded{padding:0 18px 18px;border-top:1px solid var(--line)}
+.journal-entry-expanded p{color:var(--ink);white-space:pre-wrap}
