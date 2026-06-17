@@ -1388,6 +1388,10 @@ function AdminControlCenter({ token }: { token: string }) {
     if (!message) return;
     run("Customer care reply sent.", () => api(`/admin/support/tickets/${ticket.id}/reply`, { method: "POST", body: JSON.stringify({ message }) }, token)).then(() => setSupportReplies(prev => ({ ...prev, [ticket.id]: "" })));
   };
+  const closeTicket = (ticket: SupportTicket) => {
+    if (ticket.status === "closed") return;
+    run("Conversation ended.", () => api(`/admin/support/tickets/${ticket.id}/close`, { method: "POST" }, token));
+  };
 
   const settingsMap = Object.fromEntries(settings.map((item) => [item.key, item.value]));
   const salvationUsers = users.filter((user) => user.salvationPrayedAt);
@@ -1458,7 +1462,7 @@ function AdminControlCenter({ token }: { token: string }) {
     </div>}
 
     {section === "care" && <div className="main-column">
-      <Panel><SectionTitle title="Customer care tickets" subtitle="View users, their account information, problems, and admin replies." /><div className="admin-list">{supportTickets.length ? supportTickets.map(ticket => { const last = ticket.messages?.[ticket.messages.length - 1]; return <div className="admin-row support-ticket-row" key={ticket.id}><div><b>{ticket.subject}</b><p>{last?.body || "No message"}</p><small>{ticket.user?.fullName || "Friend"} / {ticket.user?.email || "No email"} / {ticket.user?.subscriptionStatus || "free"} / {ticket.status}</small><div className="support-thread">{ticket.messages?.map((message, index) => <p key={`${ticket.id}-${index}`} className={message.role === "admin" ? "admin-reply" : ""}><b>{message.role === "admin" ? "Admin" : "User"}:</b> {message.body}</p>)}</div><textarea value={supportReplies[ticket.id] || ""} onChange={event => setSupportReplies(prev => ({ ...prev, [ticket.id]: event.target.value }))} placeholder="Reply to this customer..." /></div><div className="admin-actions"><button onClick={() => replyToTicket(ticket)} disabled={!(supportReplies[ticket.id] || "").trim()}>Reply</button></div></div>; }) : <p>No customer care tickets yet.</p>}</div></Panel>
+      <Panel><SectionTitle title="Customer care tickets" subtitle="View users, their account information, problems, and admin replies." /><div className="admin-list">{supportTickets.length ? supportTickets.map(ticket => { const last = ticket.messages?.[ticket.messages.length - 1]; const isClosed = ticket.status === "closed"; return <div className="admin-row support-ticket-row" key={ticket.id}><div><b>{ticket.subject}</b><p>{last?.body || "No message"}</p><small>{ticket.user?.fullName || "Friend"} / {ticket.user?.email || "No email"} / {ticket.user?.subscriptionStatus || "free"} / {ticket.status}</small><div className="support-thread">{ticket.messages?.map((message, index) => <p key={`${ticket.id}-${index}`} className={message.role === "admin" ? "admin-reply" : ""}><b>{message.role === "admin" ? "Admin" : "User"}:</b> {message.body}</p>)}</div><textarea value={supportReplies[ticket.id] || ""} onChange={event => setSupportReplies(prev => ({ ...prev, [ticket.id]: event.target.value }))} placeholder={isClosed ? "This conversation has been closed." : "Reply to this customer..."} disabled={isClosed} />{isClosed && <small>This conversation is closed. The customer can still read the history, but cannot send new messages in this chat.</small>}</div><div className="admin-actions"><button onClick={() => replyToTicket(ticket)} disabled={isClosed || !(supportReplies[ticket.id] || "").trim()}>Reply</button><button className="button secondary" onClick={() => closeTicket(ticket)} disabled={isClosed}>{isClosed ? "Closed" : "End conversation"}</button></div></div>; }) : <p>No customer care tickets yet.</p>}</div></Panel>
     </div>}
 
     {section === "settings" && <div className="admin-section-grid">
