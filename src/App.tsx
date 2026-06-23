@@ -30,7 +30,6 @@ type PrayerExperience = {
   confessions: string[];
   guidedPrayer: string;
   encouragement: string[];
-  videoUrl: string;
 };
 type Wellness = { overall?: number; insight?: string; pillars?: Record<string, { score?: number; count?: number }> };
 type AppNotification = { id: string; type: string; title: string; body: string; readAt?: string | null; createdAt: string; metadata?: Record<string, unknown> };
@@ -74,6 +73,8 @@ class ApiError extends Error {
 
 const API_URL = import.meta.env.VITE_API_URL || "https://revivespring.onrender.com/api";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const IUBENDA_PRIVACY_URL = "https://www.iubenda.com/privacy-policy/60287717";
+const IUBENDA_COOKIE_URL = "https://www.iubenda.com/privacy-policy/60287717/cookie-policy";
 const ROTATING_QUOTES = [
   { verse: "Trust in the Lord with all your heart.", reference: "Proverbs 3:5" },
   { verse: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
@@ -463,6 +464,7 @@ export default function App() {
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
       <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
       <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/reset" element={<ResetPage />} />
       <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
       <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setLanguage(updatedUser.language); setOnboarded(true); setUser(updatedUser); }} /> : <Navigate to="/auth" replace />} />
       <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} updateUser={setUser} setLanguage={setLanguage} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
@@ -491,6 +493,10 @@ function SplashPage({ nextPath }: { nextPath: string }) {
 function Brand({ compact = false }: { compact?: boolean }) {
   const language = storedLang();
   return <div className={`brand ${compact ? "compact" : ""}`}><span className="brand-mark">RS</span><span><b>ReviveSpring</b>{!compact && <small>{tr(language, "Faith for every day", "La foi pour chaque jour")}</small>}</span></div>;
+}
+
+function LegalLinks({ language, compact = false }: { language: Lang; compact?: boolean }) {
+  return <div className={`legal-links ${compact ? "compact" : ""}`.trim()}><a href={IUBENDA_PRIVACY_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Privacy Policy">{tr(language, "Privacy Policy", "Politique de confidentialite")}</a><a href={IUBENDA_COOKIE_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Cookie Policy">{tr(language, "Cookie Policy", "Politique relative aux cookies")}</a></div>;
 }
 
 function UserAvatar({ user, className = "" }: { user: User; className?: string }) {
@@ -769,6 +775,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
       {signup && <Field label={tr(language, "Full name", "Nom complet")} value={name} onChange={setName} placeholder={tr(language, "Your full name", "Votre nom complet")} />}
       <Field label={tr(language, "Email address", "Adresse e-mail")} value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
       <Field label={tr(language, "Password", "Mot de passe")} value={password} onChange={setPassword} placeholder={tr(language, "At least 6 characters", "Au moins 6 caracteres")} type="password" />
+      {!signup && <div style={{ textAlign: "right" }}><button className="link-button" onClick={() => navigate(`/reset?email=${encodeURIComponent(email)}`)}>{tr(language, "Forgot password?", "Mot de passe oublie ?")}</button></div>}
       <button className="button primary full" disabled={busy || email.length < 5 || password.length < 6 || (signup && !name.trim())}>{busy ? tr(language, "Please wait...", "Veuillez patienter...") : signup ? tr(language, "Create account", "Creer un compte") : tr(language, "Sign in", "Se connecter")} <span>{"->"}</span></button>
     </form>
     <div className="auth-divider"><span>{tr(language, "or continue with", "ou continuer avec")}</span></div>
@@ -800,6 +807,69 @@ function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) =>
   </div></PublicShell>;
 }
 
+function ResetPage() {
+  const navigate = useNavigate();
+  const language = storedLang();
+  const [email, setEmail] = useState(() => new URLSearchParams(window.location.search).get("email") || sessionStorage.getItem("rs_pending_email") || "");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const t = (en: string, fr: string) => tr(language, en, fr);
+
+  const sendReset = async () => {
+    if (!email || !email.includes("@")) {
+      setMessage(t("Enter a valid email before sending a reset code.", "Entrez un e-mail valide avant d'envoyer un code de reinitialisation."));
+      return;
+    }
+    setBusy(true); setMessage("");
+    try {
+      await api<any>("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email, client: "web" }) });
+      setEmailSent(true);
+      setMessage(t("A reset code was sent to your email.", "Un code de reinitialisation a ete envoye a votre e-mail."));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t("Could not send reset code.", "Impossible d'envoyer le code."));
+    } finally { setBusy(false); }
+  };
+
+  const submitReset = async () => {
+    if (!email || code.length !== 6 || newPassword.length < 6) {
+      setMessage(t("Provide email, 6-digit code, and a new password (min 6 chars).", "Fournissez l'e-mail, le code a 6 chiffres et un nouveau mot de passe (min 6 caracteres)."));
+      return;
+    }
+    setBusy(true); setMessage("");
+    try {
+      await api<any>("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, otp: code, new_password: newPassword, client: "web" }) });
+      setMessage(t("Password reset successfully. Please sign in with your new password.", "Mot de passe reinitialise avec succes. Veuillez vous connecter avec votre nouveau mot de passe."));
+      // navigate back to auth after short delay
+      setTimeout(() => navigate("/auth"), 1200);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t("Could not reset password.", "Impossible de reinitialiser le mot de passe."));
+    } finally { setBusy(false); }
+  };
+
+  return <PublicShell>
+    <div className="auth-card">
+      <Brand />
+      <p className="kicker">{t("Reset your password", "Reinitialiser le mot de passe")}</p>
+      <h1>{t("Reset Password", "Reinitialiser le mot de passe")}</h1>
+      <p className="lead">{t("We will send a 6-digit code to your email to reset your password.", "Nous enverrons un code a 6 chiffres a votre e-mail pour reinitialiser votre mot de passe.")}</p>
+      <div className="form-stack">
+        <Field label={t("Email address", "Adresse e-mail")} value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
+        <button className="button primary full" disabled={busy} onClick={sendReset}>{busy ? t("Please wait...", "Veuillez patienter...") : emailSent ? t("Send another reset code", "Envoyer un autre code de reinitialisation") : t("Send reset code", "Envoyer le code de reinitialisation")} <span>{"->"}</span></button>
+        {emailSent && <>
+          <Field label={t("Verification code", "Code de verification")} value={code} onChange={setCode} placeholder="000000" />
+          <Field label={t("New password", "Nouveau mot de passe")} value={newPassword} onChange={setNewPassword} placeholder={t("At least 6 characters", "Au moins 6 caracteres")} type="password" />
+          <button className="button primary full" disabled={busy} onClick={submitReset}>{busy ? t("Please wait...", "Veuillez patienter...") : t("Reset Password", "Reinitialiser le mot de passe")} <span>{"->"}</span></button>
+        </>}
+        {message && <p className="form-error">{message}</p>}
+        <button className="link-button" onClick={() => navigate("/auth")}>{t("Back to sign in", "Retour a la connexion")}</button>
+      </div>
+    </div>
+  </PublicShell>;
+}
+
 function PublicShell({ children }: { children: React.ReactNode }) {
   const [quote, setQuote] = useState(0);
   const language = storedLang();
@@ -808,7 +878,7 @@ function PublicShell({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(timer);
   }, []);
   const active = ROTATING_QUOTES[quote];
-  return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">{tr(language, "Revive your spirit. Renew your day.", "Ranimez votre esprit. Renouvelez votre journee.")}</p><h2>{tr(language, "A calmer place to pray, reflect, and grow with purpose.", "Un endroit plus paisible pour prier, reflechir et grandir avec intention.")}</h2><p>{tr(language, "Daily guidance meets real life, one faithful step at a time.", "Un accompagnement quotidien pour la vraie vie, un pas fidele a la fois.")}</p></div><div className="aside-verse"><span>{tr(language, "Daily reflection", "Reflexion du jour")}</span><q className="fade-quote" key={active.reference}>{active.verse}</q><b>{active.reference}</b></div></div><div className="public-main">{children}</div></main>;
+  return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">{tr(language, "Revive your spirit. Renew your day.", "Ranimez votre esprit. Renouvelez votre journee.")}</p><h2>{tr(language, "A calmer place to pray, reflect, and grow with purpose.", "Un endroit plus paisible pour prier, reflechir et grandir avec intention.")}</h2><p>{tr(language, "Daily guidance meets real life, one faithful step at a time.", "Un accompagnement quotidien pour la vraie vie, un pas fidele a la fois.")}</p></div><div className="aside-verse"><span>{tr(language, "Daily reflection", "Reflexion du jour")}</span><q className="fade-quote" key={active.reference}>{active.verse}</q><b>{active.reference}</b></div></div><div className="public-main">{children}<LegalLinks language={language} compact /></div></main>;
 }
 
 function OnboardingPage({ language, token, user, onComplete }: { language:Lang; token: string; user: User; onComplete: (user: User) => void }) {
@@ -1181,10 +1251,31 @@ function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "assistant", content: t(`Hi ${user.fullName.split(" ")[0] || "Friend"}, welcome to ReviveSpring Care. Tell us what you need help with and our team will follow up.`, `Bonjour ${user.fullName.split(" ")[0] || "ami"}, bienvenue au service ReviveSpring. Dites-nous ce dont vous avez besoin et notre equipe vous repondra.`) },
   ]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [subject, setSubject] = useState(t("Customer care message", "Message au service client"));
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [replyingTicketId, setReplyingTicketId] = useState<string | null>(null);
+
+  const loadTickets = async () => {
+    setLoadingTickets(true);
+    try {
+      const data = await api<any>("/support/tickets", {}, token);
+      setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+    } catch {
+      setTickets([]);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadTickets();
+  }, [token]);
+
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
     const value = message.trim();
@@ -1195,6 +1286,7 @@ function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: 
       setMessages(prev => [...prev, { role: "user", content: value }, { role: "assistant", content: t("Message received. Customer care can now view this in the admin dashboard and reply to your account.", "Message recu. Le service client peut maintenant le voir dans le tableau admin et repondre a votre compte.") }]);
       setMessage("");
       setSent(true);
+      await loadTickets();
       await onTicketSent();
     } catch (err) {
       setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : t("We could not send this message right now.", "Nous ne pouvons pas envoyer ce message pour le moment.") }]);
@@ -1202,7 +1294,23 @@ function CustomerCareScreen({ user, token, onTicketSent }: { user: User; token: 
       setBusy(false);
     }
   };
-  return <><PageIntro title={t("Customer Care", "Service client")} subtitle={t("A calm support space for account, prayer, billing, and app questions.", "Un espace d'aide paisible pour les questions de compte, de priere, de facturation et d'application.")} action={<span className="care-status"><i /> {t("Support desk online", "Assistance en ligne")}</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>{t("We are here to help you keep growing.", "Nous sommes la pour vous aider a continuer de grandir.")}</h2><p>{t("Drop a message below. Your account information will be attached so admins can review and reply directly.", "Laissez un message ci-dessous. Les informations de votre compte seront jointes afin que les administrateurs puissent examiner et repondre directement.")}</p></div></Panel><div className="care-quick-list"><article><b>{t("Account help", "Aide au compte")}</b><p>{t("Login, Google sign-in, profile, and language settings.", "Connexion, Google sign-in, profil et parametres de langue.")}</p></article><article><b>{t("Prayer support", "Aide a la priere")}</b><p>{t("Library, daily prayers, wellness score, and saved records.", "Bibliotheque, prieres quotidiennes, score de bien-etre et enregistrements sauvegardes.")}</p></article><article><b>{t("Billing care", "Aide a la facturation")}</b><p>{t("Premium access, plan questions, and payment follow-up.", "Acces premium, questions sur le forfait et suivi des paiements.")}</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">{t(`Support ticket created for ${user.email}.`, `Ticket d'assistance cree pour ${user.email}.`)}</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><input value={subject} onChange={event => setSubject(event.target.value)} placeholder={t("Subject", "Sujet")} /><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder={t("Write your message to customer care...", "Ecrivez votre message au service client...")} /><button className="button primary" disabled={!message.trim() || busy}>{busy ? t("Sending...", "Envoi...") : t("Send message", "Envoyer le message")}</button></form></Panel></>;
+
+  const sendReply = async (ticket: SupportTicket) => {
+    const draft = (replyDrafts[ticket.id] || "").trim();
+    if (!draft || replyingTicketId === ticket.id || ticket.status === "closed") return;
+    setReplyingTicketId(ticket.id);
+    try {
+      await api<SupportTicket>(`/support/tickets/${ticket.id}/messages`, { method: "POST", body: JSON.stringify({ message: draft }) }, token);
+      setReplyDrafts(prev => ({ ...prev, [ticket.id]: "" }));
+      await loadTickets();
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : t("We could not send this reply right now.", "Nous ne pouvons pas envoyer cette reponse pour le moment.") }]);
+    } finally {
+      setReplyingTicketId(current => current === ticket.id ? null : current);
+    }
+  };
+
+  return <><PageIntro title={t("Customer Care", "Service client")} subtitle={t("A calm support space for account, prayer, billing, and app questions.", "Un espace d'aide paisible pour les questions de compte, de priere, de facturation et d'application.")} action={<span className="care-status"><i /> {t("Support desk online", "Assistance en ligne")}</span>} /><div className="care-grid"><Panel className="care-hero"><span className="care-orb"><UiIcon name="support" size={28} /></span><div><p className="eyebrow">ReviveSpring help desk</p><h2>{t("We are here to help you keep growing.", "Nous sommes la pour vous aider a continuer de grandir.")}</h2><p>{t("Drop a message below. Your account information will be attached so admins can review and reply directly.", "Laissez un message ci-dessous. Les informations de votre compte seront jointes afin que les administrateurs puissent examiner et repondre directement.")}</p></div></Panel><div className="care-quick-list"><article><b>{t("Account help", "Aide au compte")}</b><p>{t("Login, Google sign-in, profile, and language settings.", "Connexion, Google sign-in, profil et parametres de langue.")}</p></article><article><b>{t("Prayer support", "Aide a la priere")}</b><p>{t("Library, daily prayers, wellness score, and saved records.", "Bibliotheque, prieres quotidiennes, score de bien-etre et enregistrements sauvegardes.")}</p></article><article><b>{t("Billing care", "Aide a la facturation")}</b><p>{t("Premium access, plan questions, and payment follow-up.", "Acces premium, questions sur le forfait et suivi des paiements.")}</p></article></div></div><Panel className="care-chat-panel"><div className="messages care-messages">{messages.map((item, index) => <p className={`message ${item.role}`} key={`${item.role}-${index}`}>{item.content}</p>)}{sent && <p className="typing">{t(`Support ticket created for ${user.email}.`, `Ticket d'assistance cree pour ${user.email}.`)}</p>}</div><form className="chat-compose care-compose" onSubmit={sendMessage}><input value={subject} onChange={event => setSubject(event.target.value)} placeholder={t("Subject", "Sujet")} /><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder={t("Write your message to customer care...", "Ecrivez votre message au service client...")} /><button className="button primary" disabled={!message.trim() || busy}>{busy ? t("Sending...", "Envoi...") : t("Send message", "Envoyer le message")}</button></form></Panel><Panel><SectionTitle title={t("Your conversations", "Vos conversations")} subtitle={t("Review your support history and continue any open ticket.", "Consultez l'historique de votre assistance et poursuivez tout ticket ouvert.")} />{loadingTickets ? <p>{t("Loading conversations...", "Chargement des conversations...")}</p> : tickets.length ? <div className="admin-list">{tickets.map(ticket => { const isClosed = ticket.status === "closed"; return <div className="admin-row support-ticket-row" key={ticket.id}><div><b>{ticket.subject}</b><small>{new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleString()} / {ticket.status}</small><div className="support-thread">{ticket.messages?.map((entry, index) => <p key={`${ticket.id}-${index}`} className={entry.role === "admin" ? "admin-reply" : ""}><b>{entry.role === "admin" ? t("Care", "Assistance") : t("You", "Vous")}:</b> {entry.body}</p>)}</div>{isClosed ? <small>{t("This conversation has been closed. You can still read the full history here.", "Cette conversation est fermee. Vous pouvez toujours lire tout l'historique ici.")}</small> : <><textarea value={replyDrafts[ticket.id] || ""} onChange={event => setReplyDrafts(prev => ({ ...prev, [ticket.id]: event.target.value }))} placeholder={t("Continue this conversation...", "Continuez cette conversation...")} /><div className="admin-actions"><button onClick={() => sendReply(ticket)} disabled={replyingTicketId === ticket.id || !(replyDrafts[ticket.id] || "").trim()}>{replyingTicketId === ticket.id ? t("Sending...", "Envoi...") : t("Send reply", "Envoyer la reponse")}</button></div></>}</div></div>; })}</div> : <p>{t("No support conversations yet.", "Aucune conversation d'assistance pour le moment.")}</p>}</Panel></>;
 }
 
 function NotificationScreen({ token, notifications, refresh, language }: { token: string; notifications: AppNotification[]; refresh: () => Promise<void>; language: Lang }) {
@@ -1229,6 +1337,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
   const [savingSettings, setSavingSettings] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const t = (en: string, fr: string) => tr(selectedLanguage, en, fr);
+  const navigate = useNavigate();
   useEffect(() => {
     setEmails(user.dailyEmailEnabled !== false);
     setPushEnabled(user.pushNotificationsEnabled !== false);
@@ -1274,7 +1383,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setDeleting(false);
     }
   };
-  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note"><b>{language === "fr" ? monetization?.pricing?.labelFr || "50 nairas / mois" : monetization?.pricing?.labelEn || "50 naira / month"}</b><p>{t("Google Play product", "Produit Google Play")}: {monetization?.pricing?.googlePlayProductId || "revivespring_premium_monthly"}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel></div></>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note"><b>{language === "fr" ? monetization?.pricing?.labelFr || "50 nairas / mois" : monetization?.pricing?.labelEn || "50 naira / month"}</b><p>{t("Google Play product", "Produit Google Play")}: {monetization?.pricing?.googlePlayProductId || "revivespring_premium_monthly"}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel></div></>;
 }
 
 const ADMIN_SECTIONS = [
@@ -1581,7 +1690,6 @@ function prayerExperience(item: PrayerItem): PrayerExperience {
       "God meets honest hearts, not perfect performances.",
       "A small faithful response today can become tomorrow's stronger rhythm.",
     ],
-    videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`Christian prophetic prayer for ${item.title}`)}`,
   };
 }
 function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item=moodPrayerItem(mood); return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
@@ -1603,7 +1711,7 @@ function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:stri
     },required*1000);
     return()=>window.clearTimeout(timer);
   },[item,recorded,refresh,token]);
-  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer prayer-experience-modal" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>A complete prayer experience for this season.</h2><PrayerResourceSection icon="01" title="Relevant Scriptures">{experience.scriptures.map(scripture => <blockquote key={scripture.reference}><q>{scripture.verse}</q><b>{scripture.reference}</b></blockquote>)}</PrayerResourceSection><PrayerResourceSection icon="02" title="Faith Confessions"><div className="prayer-resource-list">{experience.confessions.map(confession => <p key={confession}>{confession}</p>)}</div></PrayerResourceSection><PrayerResourceSection icon="03" title="Guided Prayer"><p className="guided-prayer-copy">{experience.guidedPrayer}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}</PrayerResourceSection><PrayerResourceSection icon="04" title="Prophetic Prayer Video"><button className="prophetic-video-card" type="button" onClick={() => window.open(experience.videoUrl, "_blank", "noopener,noreferrer")}><span className="video-play">{"\u25B6"}</span><div><b>Watch a prayer for {item.title}</b><p>Opens a curated YouTube search so you can choose a trusted ministry voice.</p></div></button></PrayerResourceSection><PrayerResourceSection icon="05" title="Words of Encouragement and Hope"><div className="prayer-resource-list hope">{experience.encouragement.map(message => <p key={message}>{message}</p>)}</div></PrayerResourceSection><p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"This prayer will be recorded once after a quiet moment here."}</p></section></div>
+  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer prayer-experience-modal" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>A complete prayer experience for this season.</h2><PrayerResourceSection icon="01" title="Relevant Scriptures">{experience.scriptures.map(scripture => <blockquote key={scripture.reference}><q>{scripture.verse}</q><b>{scripture.reference}</b></blockquote>)}</PrayerResourceSection><PrayerResourceSection icon="02" title="Faith Confessions"><div className="prayer-resource-list">{experience.confessions.map(confession => <p key={confession}>{confession}</p>)}</div></PrayerResourceSection><PrayerResourceSection icon="03" title="Guided Prayer"><p className="guided-prayer-copy">{experience.guidedPrayer}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}</PrayerResourceSection><PrayerResourceSection icon="04" title="Words of Encouragement and Hope"><div className="prayer-resource-list hope">{experience.encouragement.map(message => <p key={message}>{message}</p>)}</div></PrayerResourceSection><p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"This prayer will be recorded once after a quiet moment here."}</p></section></div>
 }
 function PrayerResourceSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return <section className="prayer-resource-section"><header><span>{icon}</span><h3>{title}</h3></header>{children}</section>;
