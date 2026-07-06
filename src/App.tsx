@@ -23,7 +23,12 @@ type User = {
 type Goal = { id: string; text: string; done: boolean; kind?: string; content?: string; durationSeconds?: number };
 type JournalEntry = { id: string; body: string; date: string };
 type ChatMessage = { role: "assistant" | "user"; content: string };
-type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number };
+type Analytics = { totalPrayers: number; visitCount: number; currentStreak: number; answeredPrayers: number; completedGoals: number; gracePeriodAvailable?: boolean; lastActiveDate?: string | null };
+type MoodCheckIn = { checkedIn: boolean; log?: { mood: string; note?: string | null } | null };
+type MannaGift = { verse: string; ref: string; blessing: string };
+type DailyManna = { available?: boolean; streak?: number; totalClaimed?: number; preview?: MannaGift; gift?: MannaGift };
+type Prayer = { id: string; prayer_text: string; is_answered?: boolean; testimony?: string | null };
+type Declaration = { declaration?: { id: string; text: string }; confirmedToday?: boolean; streak?: number };
 type PrayerItem = { id?: string; identifier?: string; title: string; body: string; icon: React.ReactNode; tone: string; mood?: string; verse?: string; reference?: string; action?: string };
 type PrayerExperience = {
   scriptures: Array<{ verse: string; reference: string }>;
@@ -35,8 +40,9 @@ type Wellness = { overall?: number; insight?: string; pillars?: Record<string, {
 type AppNotification = { id: string; type: string; title: string; body: string; readAt?: string | null; createdAt: string; metadata?: Record<string, unknown> };
 type SupportTicket = { id: string; subject: string; status: string; priority?: string; messages: Array<{ role: string; body: string; senderName?: string; senderEmail?: string; createdAt?: string }>; user?: { email?: string; fullName?: string; subscriptionStatus?: string } ; updatedAt?: string; createdAt?: string };
 type DeletionFeedback = { id: string; user_email: string; user_full_name?: string | null; reason: string; feedback: string; created_at: string };
-type SlideKind = "info" | "choice" | "multi" | "statement" | "chart" | "reminder" | "builder" | "commit";
-type Slide = { id: string; kind: SlideKind; title: string; body?: string; statement?: string; options?: string[] };
+type OnboardingOption = { emoji: string; label: string; exclusive?: boolean };
+type OnboardingStepType = "tour" | "single" | "multi" | "reminder" | "email" | "profile" | "premium" | "summary";
+type OnboardingStep = { id: string; section: string; title: string; subtitle?: string; type: OnboardingStepType; options?: OnboardingOption[]; maxSelect?: number; optional?: boolean };
 type ReminderSettings = {
   hour: number;
   minute: number;
@@ -411,34 +417,108 @@ const CHART_SERIES = [
 ] as const;
 const REMINDER_HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
 const REMINDER_MINUTES = Array.from({ length: 12 }, (_, index) => index * 5);
-const ONBOARDING: Slide[] = [
-  { id: "story", kind: "info", title: "This is what's possible when Scripture meets real life", body: "Stories from people finding joy, purpose, and direction with daily guidance." },
-  { id: "unique", kind: "info", title: "Every journey of faith is unique", body: "We'll help you create a path that fits your life, not someone else's." },
-  { id: "topic", kind: "choice", title: "Which topic would you like to explore first?", body: "This will not limit your experience with ReviveSpring.", options: ["Biblical Self Discovery", "Build Unshakable Faith", "Parenting", "Financial Peace", "Other"] },
-  { id: "chart", kind: "chart", title: "You've already taken a powerful step", body: "86% of users who focused on one topic in their first month found more peace, clarity, and direction." },
-  { id: "motivation", kind: "multi", title: "What motivates you to grow spiritually?", body: "Select all that apply", options: ["Becoming a better person", "Finding deeper meaning", "Helping others", "Overcoming struggles", "Other"] },
-  { id: "balance", kind: "statement", title: "Do you agree with this statement?", statement: "Spending time on spiritual growth makes my life feel balanced.", options: ["No", "Yes"] },
-  { id: "answers", kind: "statement", title: "Do you agree with this statement?", statement: "I think the Bible has answers to most of life's questions, but at times, I come across passages that are hard to interpret.", options: ["No", "Yes"] },
-  { id: "help", kind: "info", title: "When Scripture feels confusing, we are here to help", body: "Faith, questions, and the hard days too." },
-  { id: "beliefs", kind: "choice", title: "Have you ever struggled to live out your beliefs?", options: ["Yes, all the time", "Sometimes", "Rarely", "Never"] },
-  { id: "living", kind: "info", title: "Shift from knowing to living", body: "Stories from people who felt just like you do now and where they are today." },
-  { id: "focus", kind: "statement", title: "Does this sound familiar?", statement: "I often find my mind wandering when I'm trying to focus on reading.", options: ["Not really", "That's me"] },
-  { id: "busy", kind: "choice", title: "How often does life feel too busy for quiet time with God?", options: ["All the time", "Sometimes", "Rarely", "Never"] },
-  { id: "promise", kind: "info", title: "Small moments, lasting peace - that's our promise to you", body: "Five minutes each morning to center your heart and carry God's presence through your day." },
-  { id: "connect", kind: "multi", title: "How do you usually find God in your day?", body: "Select all that apply", options: ["Prayer", "Worship music", "Reading the Bible", "Reflecting in nature", "Journaling my thoughts", "Other"] },
-  { id: "hardest", kind: "info", title: "What if Scripture came to you in your hardest moments?", body: "Verses chosen for your struggles, with wisdom that turns pain into purpose." },
-  { id: "devotional", kind: "choice", title: "Which describes your ideal devotional experience?", options: ["Simple and actionable", "Deep and thought-provoking", "Uplifting and inspiring", "Guided and structured"] },
-  { id: "pace", kind: "info", title: "However you like to connect, we meet you there", body: "Read, listen, reflect, and grow at your pace." },
-  { id: "reading", kind: "info", title: "We don't just add to your reading list - we change how you live", body: "Short, relevant devotionals that make Scripture applicable and easy." },
-  { id: "time", kind: "choice", title: "How much time are you willing to dedicate to your spiritual growth?", options: ["5 min/day - Short", "10 min/day - Average", "15 min/day - Significant", "20 min/day - Dedicated"] },
-  { id: "routine", kind: "reminder", title: "It takes just 21 days to form a new spiritual routine!", body: "Notifications will help you stay on track and push you to achieve your goals." },
-  { id: "outcome", kind: "multi", title: "What can we help you do?", body: "This will not limit your experience with ReviveSpring.", options: ["Hear God's voice more clearly", "Find my calling and next steps", "Understand scripture more deeply", "Heal from past hurts", "Break free from destructive patterns", "Align my life with my beliefs"] },
-  { id: "summary", kind: "info", title: "Got it! We'll help you understand scripture more deeply", body: "Your personal path is almost ready." },
-  { id: "rhythm", kind: "info", title: "Scripture becomes life here! Let's build your daily rhythm", body: "Daily prayer, Scripture, quizzes, and one-time actions shaped for you." },
-  { id: "finish", kind: "builder", title: "Creating your personal path...", body: "Setting goals", statement: "Are you inclined to finish what you start?", options: ["No", "Yes"] },
-  { id: "challenge", kind: "builder", title: "Creating your personal path...", body: "Adapting growth areas", statement: "Do you tend to stray from the path when faced with challenges?", options: ["No", "Yes"] },
-  { id: "verse", kind: "builder", title: "Creating your personal path...", body: "Picking content", statement: "Do you find it challenging to find the right Bible verse?", options: ["No", "Yes"] },
-  { id: "pact", kind: "commit", title: "Commitment pact", body: "This isn't a big vow - it's a small yes to growing with God." },
+const ONBOARDING_STEPS: OnboardingStep[] = [
+  // Section 1 — Welcome
+  { id: "tour", section: "Welcome", title: "ReviveMe is your daily space for prayer, growth, and peace.", type: "tour", options: [
+    { emoji: "🙏", label: "Prayer" }, { emoji: "📓", label: "Journal" }, { emoji: "✅", label: "Daily Goals" },
+  ] },
+  // Section 2 — Faith Background
+  { id: "faithJourney", section: "Faith Background", title: "Where are you on your faith journey right now?", type: "single", options: [
+    { emoji: "🌱", label: "I'm brand new to Christianity" }, { emoji: "📖", label: "I'm growing but still learning" },
+    { emoji: "🌳", label: "I've walked with God for many years" }, { emoji: "🔄", label: "I'm returning after a period away" },
+    { emoji: "🤔", label: "I'm exploring and not sure yet" },
+  ] },
+  { id: "churchConnection", section: "Faith Background", title: "Are you currently connected to a church or faith community?", type: "single", options: [
+    { emoji: "✅", label: "Yes, I attend regularly" }, { emoji: "🔄", label: "Sometimes, not consistently" },
+    { emoji: "🏠", label: "I worship on my own at home" }, { emoji: "🔍", label: "I'm looking for a community" },
+    { emoji: "❌", label: "No, not currently" },
+  ] },
+  { id: "bibleFamiliarity", section: "Faith Background", title: "How familiar are you with the Bible?", type: "single", options: [
+    { emoji: "📗", label: "I'm just starting to read it" }, { emoji: "📘", label: "I know the basics and some stories" },
+    { emoji: "📙", label: "I read it regularly" }, { emoji: "📕", label: "I study it deeply and consistently" },
+  ] },
+  { id: "salvation", section: "Faith Background", title: "Have you made a personal decision to follow Jesus Christ?", type: "single", options: [
+    { emoji: "✝️", label: "Yes, I have" }, { emoji: "🌱", label: "I'm not sure — I'd like to know more" },
+    { emoji: "🙏", label: "I'd like to make that decision today" }, { emoji: "🤔", label: "Not yet, but I'm open" },
+  ] },
+  // Section 3 — Prayer Needs
+  { id: "lifeSeason", section: "Prayer Needs", title: "What best describes your life right now?", type: "single", options: [
+    { emoji: "🌊", label: "I'm going through a very difficult season" }, { emoji: "⛅", label: "Things are okay but I need more peace" },
+    { emoji: "☀️", label: "Life is good and I want to stay connected" }, { emoji: "🌱", label: "I'm in a season of new beginnings" },
+    { emoji: "🔄", label: "I'm in a transition or major change" },
+  ] },
+  { id: "prayerFocus", section: "Prayer Needs", title: "What do you most want to bring to God in prayer?", subtitle: "Choose up to 3", type: "multi", maxSelect: 3, options: [
+    { emoji: "😰", label: "Anxiety & fear" }, { emoji: "💔", label: "Healing & pain" }, { emoji: "👨‍👩‍👧", label: "Family & relationships" },
+    { emoji: "💰", label: "Finances & provision" }, { emoji: "🧭", label: "Direction & big decisions" }, { emoji: "💪", label: "Strength & perseverance" },
+    { emoji: "😴", label: "Sleep, rest & peace of mind" }, { emoji: "🙌", label: "Praise & worship" }, { emoji: "❤️", label: "Salvation of a loved one" },
+    { emoji: "🤝", label: "Forgiveness & reconciliation" },
+  ] },
+  { id: "emotionalState", section: "Prayer Needs", title: "How are you feeling most days lately?", type: "single", options: [
+    { emoji: "😟", label: "Overwhelmed and heavy" }, { emoji: "😐", label: "Okay but going through the motions" },
+    { emoji: "😌", label: "Peaceful but wanting to grow deeper" }, { emoji: "😊", label: "Grateful and full of faith" },
+    { emoji: "😔", label: "Lonely or disconnected from God" },
+  ] },
+  { id: "mentalWellness", section: "Prayer Needs", title: "Do any of these affect your day-to-day life?", subtitle: "Select all that apply", type: "multi", options: [
+    { emoji: "😥", label: "Anxiety or excessive worry" }, { emoji: "😞", label: "Low mood or depression" }, { emoji: "😤", label: "Stress and burnout" },
+    { emoji: "😴", label: "Poor sleep" }, { emoji: "😔", label: "Grief or loss" }, { emoji: "💭", label: "Low self-worth" },
+    { emoji: "✅", label: "None of these — I'm doing well", exclusive: true },
+  ] },
+  { id: "prayerUrgency", section: "Prayer Needs", title: "Is there something specific you need God to move on right now?", type: "single", options: [
+    { emoji: "🔥", label: "Yes — I'm in urgent need" }, { emoji: "🙏", label: "Yes — ongoing but not urgent" },
+    { emoji: "🌿", label: "Not specifically — I just want to grow" }, { emoji: "🤲", label: "I want to learn how to pray more" },
+  ] },
+  // Section 4 — Spiritual Goals
+  { id: "spiritualGoals", section: "Spiritual Goals", title: "What do you most want ReviveMe to help you with?", subtitle: "Choose up to 2", type: "multi", maxSelect: 2, options: [
+    { emoji: "🔥", label: "Build a consistent daily prayer habit" }, { emoji: "📖", label: "Know and understand the Bible better" },
+    { emoji: "☮️", label: "Find more peace and calm in life" }, { emoji: "💪", label: "Stay strong through a hard season" },
+    { emoji: "🌟", label: "Grow closer to God personally" }, { emoji: "🙌", label: "Experience a breakthrough" },
+    { emoji: "🧘", label: "Improve my mental and emotional wellbeing" },
+  ] },
+  { id: "commitmentLevel", section: "Spiritual Goals", title: "How much time can you realistically give to prayer each day?", type: "single", options: [
+    { emoji: "⚡", label: "5 minutes — short and focused" }, { emoji: "🕐", label: "10–15 minutes — a meaningful pause" },
+    { emoji: "🕑", label: "20–30 minutes — deep and unhurried" }, { emoji: "🕒", label: "More than 30 minutes — I want to go deep" },
+  ] },
+  { id: "streakMotivation", section: "Spiritual Goals", title: "What keeps you consistent in spiritual habits?", type: "single", options: [
+    { emoji: "🏆", label: "Seeing my progress and streaks" }, { emoji: "🔔", label: "Being reminded at the right time" },
+    { emoji: "📖", label: "Having fresh content every day" }, { emoji: "👥", label: "Knowing others are praying too" },
+    { emoji: "🎯", label: "Having a clear goal to work toward" },
+  ] },
+  { id: "journeyType", section: "Spiritual Goals", title: "What kind of prayer experience do you prefer?", type: "single", options: [
+    { emoji: "📝", label: "Written prayers I can read and follow" }, { emoji: "📖", label: "A Bible verse to sit with and reflect on" },
+    { emoji: "🎯", label: "A short daily action step to live out" }, { emoji: "🎙️", label: "Free, guided conversation with AI" },
+    { emoji: "🔀", label: "A healthy mix of all of the above" },
+  ] },
+  // Section 5 — Daily Rhythm
+  { id: "bestPrayerTime", section: "Daily Rhythm", title: "When do you feel most open to prayer?", type: "single", options: [
+    { emoji: "🌅", label: "Early morning — before the day begins" }, { emoji: "☀️", label: "Mid-morning — once I've settled in" },
+    { emoji: "🌤️", label: "Afternoon — midday reset" }, { emoji: "🌆", label: "Evening — winding down" },
+    { emoji: "🌙", label: "Night — quiet before bed" }, { emoji: "🔀", label: "It varies for me" },
+  ] },
+  { id: "reminderTime", section: "Daily Rhythm", title: "Set your daily prayer reminder", type: "reminder" },
+  { id: "email", section: "Daily Rhythm", title: "Your daily prayer email will go to:", type: "email" },
+  // Section 6 — Faith Personalization
+  { id: "denomination", section: "Faith Personalization", title: "Which best describes your Christian background?", subtitle: "Optional", type: "single", optional: true, options: [
+    { emoji: "✝️", label: "Catholic" }, { emoji: "🕊️", label: "Protestant / Evangelical" }, { emoji: "🙌", label: "Pentecostal / Charismatic" },
+    { emoji: "✝️", label: "Orthodox" }, { emoji: "🌍", label: "African Traditional Christian" }, { emoji: "🌐", label: "Non-denominational" },
+    { emoji: "🤷", label: "Not sure / Prefer not to say" },
+  ] },
+  { id: "prayerLanguageStyle", section: "Faith Personalization", title: "When you read a prayer, what tone feels most natural?", type: "single", options: [
+    { emoji: "🤝", label: "Conversational — like talking to a friend" }, { emoji: "📜", label: "Traditional — formal and reverent" },
+    { emoji: "🔥", label: "Bold & declarative — strong faith confessions" }, { emoji: "🌊", label: "Gentle & reflective — quiet and meditative" },
+  ] },
+  { id: "scripturePreference", section: "Faith Personalization", title: "Which Bible translation do you prefer?", type: "single", options: [
+    { emoji: "📖", label: "NIV — easy to understand" }, { emoji: "📖", label: "KJV — classic and traditional" },
+    { emoji: "📖", label: "NLT — simple, everyday language" }, { emoji: "📖", label: "ESV — precise and modern" },
+    { emoji: "📖", label: "No preference — surprise me" },
+  ] },
+  { id: "testimonialIntent", section: "Faith Personalization", title: "Would you like to track answered prayers?", type: "single", options: [
+    { emoji: "✅", label: "Yes — I want to mark prayers as answered" }, { emoji: "📓", label: "Yes — and write a brief testimony when they are" },
+    { emoji: "🔄", label: "Maybe later" }, { emoji: "❌", label: "No, not for me" },
+  ] },
+  // Section 7 — Final Steps
+  { id: "profile", section: "Final Steps", title: "How should we address you in your prayers?", type: "profile" },
+  { id: "premiumChoice", section: "Final Steps", title: "Unlock everything ReviveMe has to offer", subtitle: "Unlimited AI chat · Mental Wellness content · No ads", type: "premium" },
+  { id: "summary", section: "Final Steps", title: "You're ready! 🎉", type: "summary" },
 ];
 
 function useStore<T>(key: string, initial: T) {
@@ -884,64 +964,204 @@ function PublicShell({ children }: { children: React.ReactNode }) {
 function OnboardingPage({ language, token, user, onComplete }: { language:Lang; token: string; user: User; onComplete: (user: User) => void }) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [committed, setCommitted] = useState(false);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => initialReminderSettings(user));
-  const [commitFxOrigin, setCommitFxOrigin] = useState<{ x: number; y: number } | null>(null);
-  const [commitFxActive, setCommitFxActive] = useState(false);
+  const [nameInput, setNameInput] = useState(user.fullName || "");
+  const [useDifferentEmail, setUseDifferentEmail] = useState(false);
+  const [emailInput, setEmailInput] = useState(user.email || "");
+  const [submitting, setSubmitting] = useState(false);
   const finishingRef = useRef(false);
   const navigate = useNavigate();
-  const slide = ONBOARDING[index], selected = answers[slide.id] || [];
-  const needsAnswer = ["choice", "multi", "statement", "builder"].includes(slide.kind);
-  const canContinue = slide.kind === "commit" ? committed : !needsAnswer || selected.length > 0;
-  const select = (option: string) => setAnswers(prev => ({ ...prev, [slide.id]: slide.kind === "multi" ? (selected.includes(option) ? selected.filter(x => x !== option) : [...selected, option]) : [option] }));
+  const step = ONBOARDING_STEPS[index];
+  const selected = answers[step.id] || [];
+  const canContinue = step.optional
+    ? true
+    : step.type === "single" || step.type === "multi"
+      ? selected.length > 0
+      : step.type === "profile"
+        ? nameInput.trim().length > 0
+        : true;
+
+  const select = (option: OnboardingOption) => {
+    setAnswers(prev => {
+      const current = prev[step.id] || [];
+      let next: string[];
+      if (step.type !== "multi") {
+        next = [option.label];
+      } else if (option.exclusive) {
+        next = [option.label];
+      } else {
+        const withoutExclusive = current.filter(label => !(step.options || []).some(o => o.label === label && o.exclusive));
+        if (withoutExclusive.includes(option.label)) {
+          next = withoutExclusive.filter(label => label !== option.label);
+        } else if (step.maxSelect && withoutExclusive.length >= step.maxSelect) {
+          return prev;
+        } else {
+          next = [...withoutExclusive, option.label];
+        }
+      }
+      return { ...prev, [step.id]: next };
+    });
+  };
 
   const completeOnboarding = async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
-    const payload = { language, answers, committed: true, completedAt: new Date().toISOString(), reminderTime: reminderSettings };
-    await api("/onboarding/save", { method: "POST", body: JSON.stringify(payload) }, token);
-    onComplete({
-      ...user,
-      hasCompletedOnboarding: true,
-      language,
-      timezone: reminderSettings.timezone,
-      reminderHour: reminderSettings.hour,
-      reminderMinute: reminderSettings.minute,
-      dailyEmailEnabled: reminderSettings.dailyEmailEnabled,
-      pushNotificationsEnabled: reminderSettings.pushNotificationsEnabled,
-    });
-    navigate("/app");
+    setSubmitting(true);
+    try {
+      const trimmedName = nameInput.trim();
+      if (trimmedName && trimmedName !== user.fullName) {
+        await api("/auth/me", { method: "PATCH", body: JSON.stringify({ full_name: trimmedName }) }, token);
+      }
+      const payload = {
+        language,
+        ...answers,
+        preferredContactEmail: useDifferentEmail ? emailInput.trim() : user.email,
+        completedAt: new Date().toISOString(),
+        reminderTime: reminderSettings,
+      };
+      await api("/onboarding/save", { method: "POST", body: JSON.stringify(payload) }, token);
+      onComplete({
+        ...user,
+        fullName: trimmedName || user.fullName,
+        hasCompletedOnboarding: true,
+        language,
+        timezone: reminderSettings.timezone,
+        reminderHour: reminderSettings.hour,
+        reminderMinute: reminderSettings.minute,
+        dailyEmailEnabled: reminderSettings.dailyEmailEnabled,
+        pushNotificationsEnabled: reminderSettings.pushNotificationsEnabled,
+      });
+      navigate("/app");
+    } finally {
+      setSubmitting(false);
+      finishingRef.current = false;
+    }
   };
 
-  const commitWithAnimation = (origin: { x: number; y: number }) => {
-    setCommitted(true);
-    setCommitFxOrigin(origin);
-    setCommitFxActive(true);
-    window.setTimeout(() => { void completeOnboarding(); }, 820);
-  };
+  const isLast = index === ONBOARDING_STEPS.length - 1;
+  const primaryLabel = submitting ? "Saving..." : step.type === "tour" ? "Get Started" : step.type === "premium" ? "Continue with Free" : isLast ? "Begin My Prayer Journey" : "Continue";
 
-  return <main className={`onboarding-shell ${commitFxActive ? "commit-transitioning" : ""}`.trim()}>
-    {commitFxOrigin && <div className={`commit-burst ${commitFxActive ? "active" : ""}`} style={{ left: `${commitFxOrigin.x}px`, top: `${commitFxOrigin.y}px` }} />}
-    <header className="onboarding-header"><Brand compact /><div className="onboarding-progress"><div><span>About you</span><b>{index + 1} / {ONBOARDING.length}</b></div><div className="progress"><i style={{ width: `${((index + 1) / ONBOARDING.length) * 100}%` }} /></div></div><button className="icon-button" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive} title="Previous step">{"<-"}</button></header>
-    <section className="onboarding-content"><div className="onboarding-stage" key={slide.id}><p className="kicker">Your personal path</p><h1>{slide.title}</h1>{slide.body && <p className="onboarding-lead">{slide.body}</p>}<div className="onboarding-stage-body"><SlideContent slide={slide} selected={selected} select={select} committed={committed} setCommitted={setCommitted} reminderSettings={reminderSettings} setReminderSettings={setReminderSettings} onCommitTap={commitWithAnimation} /></div></div></section>
-    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || commitFxActive}>Back</button><button className="button primary" disabled={!canContinue || commitFxActive} onClick={async () => { if (index === ONBOARDING.length - 1) { await completeOnboarding(); } else setIndex(index + 1); }}>{index === ONBOARDING.length - 1 ? "Enter ReviveSpring" : "Continue"} <span>{"->"}</span></button></footer>
+  return <main className="onboarding-shell">
+    <header className="onboarding-header"><Brand compact /><div className="onboarding-progress"><div><span>{step.section}</span><b>{index + 1} / {ONBOARDING_STEPS.length}</b></div><div className="progress"><i style={{ width: `${((index + 1) / ONBOARDING_STEPS.length) * 100}%` }} /></div></div><button className="icon-button" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0} title="Previous step">{"<-"}</button></header>
+    <section className="onboarding-content"><div className="onboarding-stage" key={step.id}><p className="kicker">{step.section}</p><h1>{step.title}</h1>{step.subtitle && <p className="onboarding-lead">{step.subtitle}</p>}<div className="onboarding-stage-body">
+      <StepContent
+        step={step}
+        selected={selected}
+        select={select}
+        reminderSettings={reminderSettings}
+        setReminderSettings={setReminderSettings}
+        user={user}
+        nameInput={nameInput}
+        setNameInput={setNameInput}
+        useDifferentEmail={useDifferentEmail}
+        setUseDifferentEmail={setUseDifferentEmail}
+        emailInput={emailInput}
+        setEmailInput={setEmailInput}
+        answers={answers}
+      />
+    </div></div></section>
+    <footer className="onboarding-footer"><button className="button ghost" onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0 || submitting}>Back</button><button className="button primary" disabled={!canContinue || submitting} onClick={async () => { if (isLast) { await completeOnboarding(); } else setIndex(index + 1); }}>{primaryLabel} <span>{"->"}</span></button></footer>
   </main>;
 }
 
-function SlideContent({ slide, selected, select, committed, setCommitted, reminderSettings, setReminderSettings, onCommitTap }: { slide: Slide; selected: string[]; select: (value: string) => void; committed: boolean; setCommitted: (value: boolean) => void; reminderSettings: ReminderSettings; setReminderSettings: (value: ReminderSettings) => void; onCommitTap: (origin: { x: number; y: number }) => void }) {
-  if (slide.kind === "chart") return <OnboardingChartCard />;
-  if (slide.kind === "reminder") return <ReminderSetupCard value={reminderSettings} onChange={setReminderSettings} />;
-  if (slide.kind === "commit") return <div className="commit-card"><p>A few moments each day with God's Word.<br />A safe space to reflect and recharge.</p><button className={`commit-button ${committed ? "done" : ""}`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setCommitted(true); onCommitTap({ x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) }); }}>{committed ? "OK" : "GO"}</button><b>{committed ? "Committed" : "Tap to commit"}</b></div>;
-  if (slide.kind === "builder") return <div className="builder-card"><span>Personalizing your path</span><div className="progress"><i style={{ width: "72%" }} /></div><h3>{slide.statement}</h3><AnimatedOptionGrid options={slide.options || []} selected={selected} select={select} /></div>;
-  if (slide.kind === "statement") return <div><blockquote>{slide.statement}</blockquote><AnimatedOptionGrid options={slide.options || []} selected={selected} select={select} /></div>;
-  if (slide.options) return <AnimatedOptionGrid options={slide.options} selected={selected} select={select} multi={slide.kind === "multi"} />;
-  return <div className="story-grid"><article><b>Carol</b><span>*****</span><p>"I wake up filled with joy and purpose."</p></article><article><b>Alex</b><span>*****</span><p>"This has helped me build a real relationship with God."</p></article><article><b>Mike</b><span>*****</span><p>"Spiritual growth now feels possible each day."</p></article></div>;
+function StepContent({ step, selected, select, reminderSettings, setReminderSettings, user, nameInput, setNameInput, useDifferentEmail, setUseDifferentEmail, emailInput, setEmailInput, answers }: {
+  step: OnboardingStep;
+  selected: string[];
+  select: (option: OnboardingOption) => void;
+  reminderSettings: ReminderSettings;
+  setReminderSettings: (value: ReminderSettings) => void;
+  user: User;
+  nameInput: string;
+  setNameInput: (value: string) => void;
+  useDifferentEmail: boolean;
+  setUseDifferentEmail: (value: boolean) => void;
+  emailInput: string;
+  setEmailInput: (value: string) => void;
+  answers: Record<string, string[]>;
+}) {
+  if (step.type === "tour") return <TourCarousel options={step.options || []} />;
+  if (step.type === "single" || step.type === "multi") return <>
+    <AnimatedOptionGrid options={step.options || []} selected={selected} select={select} />
+    {step.optional && <p className="onboarding-skip-hint">Optional — leave it blank and continue if you'd rather not say.</p>}
+  </>;
+  if (step.type === "reminder") return <ReminderSetupCard value={reminderSettings} onChange={setReminderSettings} />;
+  if (step.type === "email") return <EmailConfirmCard email={user.email} useDifferentEmail={useDifferentEmail} onToggle={setUseDifferentEmail} emailInput={emailInput} setEmailInput={setEmailInput} />;
+  if (step.type === "profile") return <ProfileSetupCard nameInput={nameInput} setNameInput={setNameInput} photoUrl={user.photoUrl} />;
+  if (step.type === "premium") return <PremiumCard />;
+  if (step.type === "summary") return <SummaryCard name={nameInput.trim() || user.fullName || "Friend"} language={user.language} topFocus={(answers.spiritualGoals && answers.spiritualGoals[0]) || (answers.prayerFocus && answers.prayerFocus[0])} reminderHour={reminderSettings.hour} reminderMinute={reminderSettings.minute} />;
+  return null;
 }
-function OptionGrid({ options, selected, select, multi }: { options: string[]; selected: string[]; select: (value: string) => void; multi?: boolean }) {
-  return <div className="option-grid">{options.map(option => <button key={option} className={selected.includes(option) ? "selected" : ""} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "OK" : multi ? "[ ]" : "( )"}</i></button>)}</div>;
+
+function TourCarousel({ options }: { options: OnboardingOption[] }) {
+  const [page, setPage] = useState(0);
+  const blurbs = [
+    "Guided daily prayers for every season of life.",
+    "Capture your thoughts and celebrate answered prayers.",
+    "Small, honest steps that build a lasting habit.",
+  ];
+  const active = options[page];
+  return <div className="tour-carousel">
+    <div className="tour-card">
+      <span className="tour-emoji">{active?.emoji}</span>
+      <h3>{active?.label}</h3>
+      <p>{blurbs[page % blurbs.length]}</p>
+    </div>
+    <div className="tour-dots">{options.map((_, i) => <button key={i} className={i === page ? "active" : ""} onClick={() => setPage(i)} aria-label={`Slide ${i + 1}`} />)}</div>
+  </div>;
 }
-function AnimatedOptionGrid({ options, selected, select, multi }: { options: string[]; selected: string[]; select: (value: string) => void; multi?: boolean }) {
-  return <div className="option-grid">{options.map((option, index) => <button key={option} className={`onboarding-option ${selected.includes(option) ? "selected" : ""}`.trim()} style={{ "--enter-delay": `${220 + (index * 90)}ms` } as CSSProperties} onClick={() => select(option)}><span>{option}</span><i>{selected.includes(option) ? "OK" : multi ? "[ ]" : "( )"}</i></button>)}</div>;
+
+function AnimatedOptionGrid({ options, selected, select }: { options: OnboardingOption[]; selected: string[]; select: (option: OnboardingOption) => void }) {
+  return <div className="option-grid">{options.map((option, index) => <button key={`${option.label}-${index}`} className={`onboarding-option ${selected.includes(option.label) ? "selected" : ""}`.trim()} style={{ "--enter-delay": `${160 + (index * 70)}ms` } as CSSProperties} onClick={() => select(option)}><span className="onboarding-option-emoji">{option.emoji}</span><span className="onboarding-option-label">{option.label}</span><i>{selected.includes(option.label) ? "OK" : "( )"}</i></button>)}</div>;
+}
+
+function EmailConfirmCard({ email, useDifferentEmail, onToggle, emailInput, setEmailInput }: { email: string; useDifferentEmail: boolean; onToggle: (value: boolean) => void; emailInput: string; setEmailInput: (value: string) => void }) {
+  return <div className="email-confirm-card">
+    <div className="email-display"><span>✉️</span><b>{email}</b></div>
+    <div className="email-confirm-actions">
+      <button className={`button ${!useDifferentEmail ? "primary" : "ghost"}`} onClick={() => onToggle(false)}>This is correct ✓</button>
+      <button className={`button ${useDifferentEmail ? "primary" : "ghost"}`} onClick={() => onToggle(true)}>Update email</button>
+    </div>
+    {useDifferentEmail && <>
+      <input value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="name@example.com" type="email" />
+      <p className="email-confirm-note">This sets where your daily devotional is sent. To change your account login email, use Settings later.</p>
+    </>}
+  </div>;
+}
+
+function ProfileSetupCard({ nameInput, setNameInput, photoUrl }: { nameInput: string; setNameInput: (value: string) => void; photoUrl?: string | null }) {
+  return <div className="profile-setup-card">
+    <button type="button" className="profile-photo-button" onClick={() => window.alert("Photo uploads are coming soon.")}>
+      {photoUrl ? <img src={photoUrl} alt="" /> : <span>👤</span>}
+      <i>📷</i>
+    </button>
+    <p className="profile-photo-hint">Photo optional</p>
+    <input className="profile-name-input" value={nameInput} onChange={e => setNameInput(e.target.value)} placeholder="First name" />
+  </div>;
+}
+
+function PremiumCard() {
+  const highlights = [
+    ["💬", "Unlimited AI Prayer Companion chat"],
+    ["🧘", "Full Mental Wellness content library"],
+    ["🚫", "No ads, ever"],
+  ];
+  return <div className="premium-onboarding-card">
+    {highlights.map(([emoji, text]) => <div className="premium-highlight-row" key={text}><span>{emoji}</span><p>{text}</p></div>)}
+    <button className="button primary full" onClick={() => window.alert("You can upgrade to Premium anytime from Settings → Subscription.")}>Upgrade to Premium</button>
+  </div>;
+}
+
+function SummaryCard({ name, language, topFocus, reminderHour, reminderMinute }: { name: string; language: Lang; topFocus?: string; reminderHour: number; reminderMinute: number }) {
+  const time = formatReminderTime(reminderHour, reminderMinute);
+  return <div className="onboarding-summary-card">
+    <h2>You're ready, {name}! 🎉</h2>
+    <div className="onboarding-summary-rows">
+      <div><span>Language</span><b>{language.toUpperCase()}</b></div>
+      {topFocus && <div><span>Top focus</span><b>{topFocus}</b></div>}
+      <div><span>Daily reminder</span><b>{time}</b></div>
+    </div>
+    <p>Everything is set. Tap below whenever you are ready to begin.</p>
+  </div>;
 }
 
 function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { user: User; token: string; signOut: () => void; updateUser: (user: User | null) => void; setLanguage: (language: Lang | null) => void; language: Lang }) {
@@ -949,6 +1169,10 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [analytics, setAnalytics] = useState<Analytics>({ totalPrayers:0, visitCount:0, currentStreak:0, answeredPrayers:5, completedGoals:0 });
+  const [moodCheckIn, setMoodCheckIn] = useState<MoodCheckIn>({ checkedIn: true });
+  const [dailyManna, setDailyManna] = useState<DailyManna>({ available: false });
+  const [prayers, setPrayers] = useState<Prayer[]>([]);
+  const [declaration, setDeclaration] = useState<Declaration>({});
   const [verse, setVerse] = useState({ verse:"I can do all things through Christ who strengthens me.", reference:"Philippians 4:13" });
   const [library, setLibrary] = useState<PrayerItem[]>(PRAYER_LIBRARY);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -992,13 +1216,37 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
     }
   };
   const refresh = async () => {
-    const [goalData, journalData, analyticsData, verseData, libraryData] = await Promise.all([
+    const [goalData, journalData, analyticsData, verseData, libraryData, moodCheckInData, mannaData, prayerData, declarationData] = await Promise.all([
       api<any[]>("/goals", {}, token), api<any[]>("/journal", {}, token), api<Analytics>("/analytics", {}, token),
       api<any>("/daily-verse", {}, token).catch(() => verse), api<any[]>("/library", {}, token).catch(() => []),
+      api<MoodCheckIn>("/mood-checkin/today", {}, token).catch(() => ({ checkedIn: true })),
+      api<DailyManna>("/daily-manna/status", {}, token).catch(() => ({ available: false })),
+      api<Prayer[]>("/prayers", {}, token).catch(() => []),
+      api<Declaration>("/declarations/today", {}, token).catch(() => ({})),
     ]);
     setGoals(goalData.map(mapGoal)); setJournal(journalData.map(item => ({ id:item.id, body:item.content, date:item.created_date || "Today" })));
     setAnalytics(analyticsData); setVerse(verseData);
+    setMoodCheckIn(moodCheckInData); setDailyManna(mannaData);
+    setPrayers(prayerData); setDeclaration(declarationData);
     if (libraryData.length) setLibrary(libraryData.map(item => ({ id:item.id, identifier:item.identifier || item.id, title:item.titleEn, body:item.prayerEn, icon:<MoodIcon name="heart" />, tone:"emerald", mood:item.category, verse:item.verseEn, reference:item.verseRef, action:item.actionEn })));
+  };
+  const submitMoodCheckIn = async (mood: string, note?: string) => {
+    await api("/mood-checkin", { method: "POST", body: JSON.stringify({ mood, note }) }, token);
+    setMoodCheckIn({ checkedIn: true, log: { mood, note } });
+  };
+  const claimDailyManna = async () => {
+    const result = await api<DailyManna>("/daily-manna/claim", { method: "POST", body: JSON.stringify({}) }, token);
+    setDailyManna(current => ({ ...current, ...result, available: false }));
+    return result;
+  };
+  const confirmDeclaration = async () => {
+    const result = await api<Declaration>("/declarations/confirm", { method: "POST", body: JSON.stringify({}) }, token);
+    setDeclaration(current => ({ ...current, ...result }));
+  };
+  const fetchRandomVerse = () => api<{ verse: string; reference: string }>("/daily-verse/random", {}, token);
+  const markPrayerAnswered = async (prayerId: string, testimony?: string) => {
+    await api(`/prayers/${prayerId}/answered`, { method: "PATCH", body: JSON.stringify({ is_answered: true, testimony }) }, token);
+    setPrayers(current => current.map(p => p.id === prayerId ? { ...p, is_answered: true, testimony } : p));
   };
   const loadMonetization = async () => {
     try {
@@ -1052,9 +1300,9 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
         {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
         <div className="screen-wrap">
           {showAds && tab !== "ai" && <Panel className="ad-banner-panel"><div className="ad-banner-copy"><p className="eyebrow">{t("Sponsored", "Sponsorise")}</p><h3>{language === "fr" ? monetization?.ads?.banner?.titleFr || "Passez premium sur ReviveSpring" : monetization?.ads?.banner?.titleEn || "Upgrade to ReviveSpring Premium"}</h3><p>{language === "fr" ? monetization?.ads?.banner?.bodyFr || "Retirez les pubs et profitez d'un acces premium sans interruption." : monetization?.ads?.banner?.bodyEn || "Remove ads and enjoy uninterrupted premium access."}</p></div><button className="button secondary">{language === "fr" ? monetization?.ads?.banner?.ctaFr || "Passer premium sur Android" : monetization?.ads?.banner?.ctaEn || "Upgrade on Android"}</button></Panel>}
-          {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} />}
+          {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} moodCheckIn={moodCheckIn} submitMoodCheckIn={submitMoodCheckIn} dailyManna={dailyManna} claimDailyManna={claimDailyManna} declaration={declaration} confirmDeclaration={confirmDeclaration} fetchRandomVerse={fetchRandomVerse} />}
           {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} language={language} />}
-          {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} />}
+          {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} prayers={prayers} markPrayerAnswered={markPrayerAnswered} />}
           {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} language={language} />}
           {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} />}
           {tab === "ai" && <AiScreen user={user} token={token} monetization={monetization} refreshMonetization={loadMonetization} />}
@@ -1067,26 +1315,126 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
 }
 
 function NavButton({ item, active, onClick }: { item: { label: string; icon: React.ReactNode }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
-function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayers }: { user: User; token:string; goals: Goal[]; analytics:Analytics; refresh:()=>Promise<void>; openAi: () => void; openPrayers: () => void }) {
+function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayers, moodCheckIn, submitMoodCheckIn, dailyManna, claimDailyManna, declaration, confirmDeclaration, fetchRandomVerse }: { user: User; token:string; goals: Goal[]; analytics:Analytics; refresh:()=>Promise<void>; openAi: () => void; openPrayers: () => void; moodCheckIn: MoodCheckIn; submitMoodCheckIn: (mood: string, note?: string) => Promise<void>; dailyManna: DailyManna; claimDailyManna: () => Promise<DailyManna>; declaration: Declaration; confirmDeclaration: () => Promise<void>; fetchRandomVerse: () => Promise<{ verse: string; reference: string }> }) {
   const [mood, setMood] = useState<string | null>(null), done = goals.filter(g => g.done).length;
   const [quote, setQuote] = useState(0);
+  const [showCheckIn, setShowCheckIn] = useState(false);
+  const [showVerseMoment, setShowVerseMoment] = useState(false);
   const t = (en: string, fr: string) => tr(user.language, en, fr);
   useEffect(() => {
     const timer = window.setInterval(() => setQuote((value) => (value + 1) % ROTATING_QUOTES.length), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => { if (!moodCheckIn.checkedIn) setShowCheckIn(true); }, [moodCheckIn.checkedIn]);
   const activeQuote = ROTATING_QUOTES[quote];
   const firstName = (user.fullName || "Friend").trim().split(" ")[0] || "Friend";
+  const streakAtGrace = isStreakAtGraceDay(analytics);
   return <><section className="welcome-row"><div><p className="eyebrow">{t("A fresh spring for your spirit today", "Une nouvelle source pour votre esprit aujourd'hui")}</p><h2>{t("Good morning", "Bonjour")}, {firstName}</h2></div><button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button></section>
-    <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>{t("Verse of the day", "Verset du jour")}</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><section><SectionTitle title={t("How are you feeling?", "Comment vous sentez-vous ?")} subtitle={t("Choose a feeling for a personal prayer.", "Choisissez un ressenti pour une priere personnelle.")} /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
-      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label={t("Prayers", "Prieres")} onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label={t("Streak", "Serie")} /><Stat value={`${analytics.visitCount}`} label={t("Visits", "Visites")} /><Stat value="5" label={t("Answered", "Exaucees")} /></div><Panel><SectionTitle title={t("Today's goals", "Objectifs du jour")} subtitle={t(`${done} of ${goals.length} complete`, `${done} sur ${goals.length} termines`)} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}</>;
+    <div className="dashboard-grid"><div className="main-column"><article className="verse-card fade-panel" key={activeQuote.reference}><p>{t("Verse of the day", "Verset du jour")}</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><DailyMannaCard manna={dailyManna} onClaim={claimDailyManna} language={user.language} /><DeclarationCard declaration={declaration} onConfirm={confirmDeclaration} language={user.language} /><button className="button ghost full" onClick={() => setShowVerseMoment(true)}>{t("Verse of the Moment — tap for a fresh word", "Verset du moment — touchez pour un mot frais")}</button><section><SectionTitle title={t("How are you feeling?", "Comment vous sentez-vous ?")} subtitle={t("Choose a feeling for a personal prayer.", "Choisissez un ressenti pour une priere personnelle.")} /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
+      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label={t("Prayers", "Prieres")} onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label={streakAtGrace ? t("Streak (grace day)", "Serie (jour de grace)") : t("Streak", "Serie")} /><Stat value={`${analytics.visitCount}`} label={t("Visits", "Visites")} /><Stat value="5" label={t("Answered", "Exaucees")} /></div><Panel><SectionTitle title={t("Today's goals", "Objectifs du jour")} subtitle={t(`${done} of ${goals.length} complete`, `${done} sur ${goals.length} termines`)} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}{showCheckIn && <DailyCheckInModal onSubmit={async (m, note) => { await submitMoodCheckIn(m, note); setShowCheckIn(false); }} onClose={() => setShowCheckIn(false)} language={user.language} />}{showVerseMoment && <VerseOfMomentModal fetchVerse={fetchRandomVerse} onClose={() => setShowVerseMoment(false)} language={user.language} />}</>;
+}
+function isStreakAtGraceDay(analytics: Analytics): boolean {
+  if (analytics.gracePeriodAvailable === false) return false;
+  if (!analytics.lastActiveDate) return false;
+  const last = new Date(`${analytics.lastActiveDate}T00:00:00Z`);
+  if (Number.isNaN(last.getTime())) return false;
+  const today = new Date();
+  const todayOnly = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const diffDays = Math.round((todayOnly.getTime() - last.getTime()) / 86400000);
+  return diffDays === 2;
+}
+function DailyCheckInModal({ onSubmit, onClose, language }: { onSubmit: (mood: string, note?: string) => Promise<void>; onClose: () => void; language: Lang }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const submit = async () => {
+    if (!selected || saving) return;
+    setSaving(true);
+    try { await onSubmit(selected, note.trim() || undefined); }
+    finally { setSaving(false); }
+  };
+  return <div className="modal-backdrop" onClick={onClose}><section className="mood-modal daily-checkin-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Close">x</button><p className="eyebrow">{t("Daily check-in", "Bilan quotidien")}</p><h2>{t("How are you today?", "Comment allez-vous aujourd'hui ?")}</h2><div className="mood-grid checkin-grid">{MOODS.map(m => <button key={m} className={selected === m ? "selected" : ""} onClick={() => setSelected(m)}>{m}</button>)}</div><textarea value={note} onChange={e => setNote(e.target.value)} placeholder={t("Add a quick note (optional)", "Ajoutez une note rapide (facultatif)")} /><button className="button primary full" disabled={!selected || saving} onClick={submit}>{saving ? t("Saving...", "Enregistrement...") : t("Save check-in", "Enregistrer")}</button></section></div>;
+}
+function DailyMannaCard({ manna, onClaim, language }: { manna: DailyManna; onClaim: () => Promise<DailyManna>; language: Lang }) {
+  const [opening, setOpening] = useState(false);
+  const [claimed, setClaimed] = useState<DailyManna | null>(null);
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const available = manna.available !== false && !claimed;
+  const gift = claimed?.gift || manna.preview;
+  const streak = claimed?.streak ?? manna.streak ?? 0;
+  const open = async () => {
+    if (opening || !available) return;
+    setOpening(true);
+    try { const result = await onClaim(); setClaimed(result); }
+    finally { setOpening(false); }
+  };
+  return <Panel className="manna-card">
+    <SectionTitle title={t("Daily Manna", "Manne du jour")} subtitle={t("A fresh gift, available once a day.", "Un don frais, disponible une fois par jour.")} />
+    {available
+      ? <button className="manna-gift-button" onClick={open} disabled={opening}><span className="tile-icon lime">🎁</span><b>{opening ? t("Opening...", "Ouverture...") : t("Tap to receive today's manna", "Touchez pour recevoir la manne d'aujourd'hui")}</b></button>
+      : <div className="manna-reveal"><p className="kicker">{t(`${streak}-day manna streak`, `Serie de manne de ${streak} jours`)}</p>{gift && <blockquote><q>{gift.verse}</q><b>{gift.ref}</b></blockquote>}{gift?.blessing && <p>{gift.blessing}</p>}</div>}
+  </Panel>;
+}
+function DeclarationCard({ declaration, onConfirm, language }: { declaration: Declaration; onConfirm: () => Promise<void>; language: Lang }) {
+  const [confirming, setConfirming] = useState(false);
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const text = declaration.declaration?.text;
+  const streak = declaration.streak ?? 0;
+  const confirmed = declaration.confirmedToday === true;
+  if (!text) return null;
+  const confirm = async () => {
+    if (confirming || confirmed) return;
+    setConfirming(true);
+    try { await onConfirm(); }
+    finally { setConfirming(false); }
+  };
+  return <Panel className="declaration-card">
+    <SectionTitle title={t("Today's Declaration", "Declaration du jour")} subtitle={streak > 0 ? t(`${streak}-day streak`, `Serie de ${streak} jours`) : t("Speak faith over your day", "Proclamez la foi sur votre journee")} />
+    <blockquote className="declaration-text"><q>{text}</q></blockquote>
+    <button className="button ghost full declaration-confirm" disabled={confirmed || confirming} onClick={confirm}>{confirmed ? t("Declared today", "Declare aujourd'hui") : confirming ? t("Confirming...", "Confirmation...") : t("I declare this over my life", "Je declare ceci sur ma vie")}</button>
+  </Panel>;
+}
+function VerseOfMomentModal({ fetchVerse, onClose, language }: { fetchVerse: () => Promise<{ verse: string; reference: string }>; onClose: () => void; language: Lang }) {
+  const [verse, setVerse] = useState<{ verse: string; reference: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const loadNext = async () => {
+    if (loading) return;
+    setLoading(true);
+    try { setVerse(await fetchVerse()); }
+    catch (_e) { /* keep showing the previous verse */ }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { loadNext(); }, []);
+  return <div className="verse-moment-backdrop" onClick={loadNext}>
+    <button className="modal-close verse-moment-close" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close">x</button>
+    {loading && !verse ? <p className="verse-moment-loading">{t("Loading...", "Chargement...")}</p> : <div className="verse-moment-content" key={verse?.reference}>
+      <q>{verse?.verse}</q>
+      <b>{verse?.reference}</b>
+      <p className="verse-moment-hint">{t("Tap anywhere for another verse", "Touchez n'importe ou pour un autre verset")}</p>
+    </div>}
+  </div>;
 }
 function PrayerScreen({ items, token, refresh, openAi, language }: { items:PrayerItem[]; token:string; refresh:()=>Promise<void>; openAi: () => void; language: Lang }) { const [active,setActive]=useState<PrayerItem|null>(null); const t = (en: string, fr: string) => tr(language, en, fr); return <><PageIntro title={t("Prayer Library", "Bibliotheque de prieres")} subtitle={t("Saved prayers and guided moments for every season.", "Prieres enregistrees et moments guides pour chaque saison.")} action={<button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button>} /><div className="library-grid">{items.map(p => <PrayerTile {...p} onOpen={()=>setActive(p)} key={prayerIdentifier(p)} />)}</div>{active&&<TimedPrayerModal item={active} token={token} refresh={refresh} close={()=>setActive(null)} />}</>; }
-function JournalScreen({ token, entries, setEntries, language }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void; language: Lang }) {
+function JournalScreen({ token, entries, setEntries, language, prayers, markPrayerAnswered }: { token:string; entries: JournalEntry[]; setEntries: (entries: JournalEntry[]) => void; language: Lang; prayers: Prayer[]; markPrayerAnswered: (id: string, testimony?: string) => Promise<void> }) {
   const [text, setText] = useState("");
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"entries" | "answered">("entries");
+  const [testimonyDraft, setTestimonyDraft] = useState<{ id: string; text: string } | null>(null);
   const t = (en: string, fr: string) => tr(language, en, fr);
-  return <><PageIntro title={t("Prayer Journal", "Journal de priere")} subtitle={t("Record requests, make room for reflection, and celebrate answers.", "Consignez vos demandes, faites de la place pour la reflexion et celebrez les reponses.")} /><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("What are you carrying today?", "Que portez-vous aujourd'hui ?")} /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setOpenEntryId(entry.id); setText(""); } }}>{t("+ Add entry", "+ Ajouter une entree")}</button></Panel><div className="entry-list">{entries.map(entry => { const isOpen = openEntryId === entry.id; const preview = entry.body.length > 120 ? `${entry.body.slice(0, 120)}...` : entry.body; return <Panel key={entry.id} className={`journal-entry-card ${isOpen ? "open" : ""}`.trim()}><button type="button" className="journal-entry-toggle" onClick={() => setOpenEntryId(current => current === entry.id ? null : entry.id)}><div><small>{entry.date}</small><p className="journal-entry-preview">{isOpen ? entry.body : preview}</p></div><span className="journal-entry-arrow" aria-hidden="true">{isOpen ? "−" : "+"}</span></button>{isOpen && <div className="journal-entry-expanded"><p>{entry.body}</p></div>}</Panel>; })}</div></>;
+  const answered = prayers.filter(p => p.is_answered);
+  const unanswered = prayers.filter(p => !p.is_answered);
+  return <><PageIntro title={t("Prayer Journal", "Journal de priere")} subtitle={t("Record requests, make room for reflection, and celebrate answers.", "Consignez vos demandes, faites de la place pour la reflexion et celebrez les reponses.")} />
+    <div className="journal-tabs"><button className={tab === "entries" ? "selected" : ""} onClick={() => setTab("entries")}>{t("My Entries", "Mes entrees")}</button><button className={tab === "answered" ? "selected" : ""} onClick={() => setTab("answered")}>{t("Answered Prayer Wall", "Mur des prieres exaucees")}</button></div>
+    {tab === "entries" ? <><Panel className="journal-compose"><textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("What are you carrying today?", "Que portez-vous aujourd'hui ?")} /><button className="button primary" onClick={async () => { if (text.trim()) { const entry=await api<any>("/journal",{method:"POST",body:JSON.stringify({title:text.slice(0,54),content:text})},token); setEntries([{ id:entry.id, body:entry.content, date:entry.created_date }, ...entries]); setOpenEntryId(entry.id); setText(""); } }}>{t("+ Add entry", "+ Ajouter une entree")}</button></Panel><div className="entry-list">{entries.map(entry => { const isOpen = openEntryId === entry.id; const preview = entry.body.length > 120 ? `${entry.body.slice(0, 120)}...` : entry.body; return <Panel key={entry.id} className={`journal-entry-card ${isOpen ? "open" : ""}`.trim()}><button type="button" className="journal-entry-toggle" onClick={() => setOpenEntryId(current => current === entry.id ? null : entry.id)}><div><small>{entry.date}</small><p className="journal-entry-preview">{isOpen ? entry.body : preview}</p></div><span className="journal-entry-arrow" aria-hidden="true">{isOpen ? "−" : "+"}</span></button>{isOpen && <div className="journal-entry-expanded"><p>{entry.body}</p></div>}</Panel>; })}</div></>
+      : <div className="answered-wall">
+          {answered.length === 0 && <Panel><p>{t("No answered prayers yet. Mark a prayer as answered below when God moves.", "Aucune priere exaucee pour le moment. Marquez une priere comme exaucee ci-dessous.")}</p></Panel>}
+          {answered.map(p => <Panel key={p.id} className="answered-prayer-card"><p className="answered-prayer-text">{p.prayer_text}</p>{p.testimony && <p className="answered-prayer-testimony">{p.testimony}</p>}</Panel>)}
+          {unanswered.length > 0 && <><p className="journal-subhead">{t("Mark a prayer as answered", "Marquer une priere comme exaucee")}</p>{unanswered.slice(0, 5).map(p => <Panel key={p.id} className="unanswered-prayer-row"><span>{p.prayer_text}</span><button className="button ghost" onClick={() => setTestimonyDraft({ id: p.id, text: "" })}>{t("Answered", "Exaucee")}</button></Panel>)}</>}
+        </div>}
+    {testimonyDraft && <div className="modal-backdrop" onClick={() => setTestimonyDraft(null)}><section className="mood-modal testimony-modal" onClick={e => e.stopPropagation()}><h2>{t("Share your testimony", "Partagez votre temoignage")}</h2><textarea value={testimonyDraft.text} onChange={e => setTestimonyDraft({ ...testimonyDraft, text: e.target.value })} placeholder={t("How did God answer this?", "Comment Dieu a-t-Il repondu ?")} /><div className="permission-actions"><button className="button ghost" onClick={() => setTestimonyDraft(null)}>{t("Cancel", "Annuler")}</button><button className="button primary" onClick={async () => { await markPrayerAnswered(testimonyDraft.id, testimonyDraft.text.trim()); setTestimonyDraft(null); }}>{t("Save", "Enregistrer")}</button></div></section></div>}
+  </>;
 }
 function GoalsScreen({ token, goals, refresh, language }: { token:string; goals: Goal[]; refresh:()=>Promise<void>; language: Lang }) {
   const [active,setActive]=useState<Goal|null>(null);
