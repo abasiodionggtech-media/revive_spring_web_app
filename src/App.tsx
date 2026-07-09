@@ -20,6 +20,9 @@ type User = {
   dailyEmailEnabled?: boolean;
   pushNotificationsEnabled?: boolean;
   bibleVersion?: string;
+  fontFamily?: string;
+  fontScale?: number;
+  hasPassword?: boolean;
 };
 type Goal = { id: string; text: string; done: boolean; kind?: string; content?: string; durationSeconds?: number };
 type JournalEntry = { id: string; body: string; date: string };
@@ -188,6 +191,9 @@ function mapUser(raw: any): User {
     dailyEmailEnabled: raw.dailyEmailEnabled !== false,
     pushNotificationsEnabled: raw.pushNotificationsEnabled !== false,
     bibleVersion: raw.bibleVersion || "NIV",
+    fontFamily: raw.fontFamily || "Inter",
+    fontScale: typeof raw.fontScale === "number" ? raw.fontScale : 1,
+    hasPassword: raw.hasPassword === true,
   };
 }
 function normalizeUser(raw: any, fallbackLanguage: Lang | null): User | null {
@@ -209,6 +215,9 @@ function normalizeUser(raw: any, fallbackLanguage: Lang | null): User | null {
     dailyEmailEnabled: raw.dailyEmailEnabled !== false,
     pushNotificationsEnabled: raw.pushNotificationsEnabled !== false,
     bibleVersion: raw.bibleVersion || "NIV",
+    fontFamily: raw.fontFamily || "Inter",
+    fontScale: typeof raw.fontScale === "number" ? raw.fontScale : 1,
+    hasPassword: raw.hasPassword === true,
   };
 }
 function mapGoal(raw: any): Goal {
@@ -439,7 +448,7 @@ const REMINDER_HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
 const REMINDER_MINUTES = Array.from({ length: 12 }, (_, index) => index * 5);
 const ONBOARDING_STEPS: OnboardingStep[] = [
   // Section 1 — Welcome
-  { id: "tour", section: "Welcome", title: "ReviveMe is your daily space for prayer, growth, and peace.", type: "tour", options: [
+  { id: "tour", section: "Welcome", title: "ReviveSpring is your daily space for prayer, growth, and peace.", type: "tour", options: [
     { emoji: "🙏", label: "Prayer" }, { emoji: "📓", label: "Journal" }, { emoji: "✅", label: "Daily Goals" },
   ] },
   // Section 2 — Faith Background
@@ -488,7 +497,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     { emoji: "🌿", label: "Not specifically — I just want to grow" }, { emoji: "🤲", label: "I want to learn how to pray more" },
   ] },
   // Section 4 — Spiritual Goals
-  { id: "spiritualGoals", section: "Spiritual Goals", title: "What do you most want ReviveMe to help you with?", subtitle: "Choose up to 2", type: "multi", maxSelect: 2, options: [
+  { id: "spiritualGoals", section: "Spiritual Goals", title: "What do you most want ReviveSpring to help you with?", subtitle: "Choose up to 2", type: "multi", maxSelect: 2, options: [
     { emoji: "🔥", label: "Build a consistent daily prayer habit" }, { emoji: "📖", label: "Know and understand the Bible better" },
     { emoji: "☮️", label: "Find more peace and calm in life" }, { emoji: "💪", label: "Stay strong through a hard season" },
     { emoji: "🌟", label: "Grow closer to God personally" }, { emoji: "🙌", label: "Experience a breakthrough" },
@@ -537,9 +546,51 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   ] },
   // Section 7 — Final Steps
   { id: "profile", section: "Final Steps", title: "How should we address you in your prayers?", type: "profile" },
-  { id: "premiumChoice", section: "Final Steps", title: "Unlock everything ReviveMe has to offer", subtitle: "Unlimited AI chat · Mental Wellness content · No ads", type: "premium" },
+  { id: "premiumChoice", section: "Final Steps", title: "Unlock everything ReviveSpring has to offer", subtitle: "Unlimited AI chat · Mental Wellness content · No ads", type: "premium" },
   { id: "summary", section: "Final Steps", title: "You're ready! 🎉", type: "summary" },
 ];
+
+type FontOption = { id: string; label: string; description: string; googleQuery: string };
+const FONT_CATALOGUE: FontOption[] = [
+  { id: "Inter", label: "Inter", description: "Clean & modern (default)", googleQuery: "Inter:wght@400;600;700;800;900" },
+  { id: "Poppins", label: "Poppins", description: "Friendly & geometric", googleQuery: "Poppins:wght@400;600;700;800;900" },
+  { id: "Nunito", label: "Nunito", description: "Soft & rounded", googleQuery: "Nunito:wght@400;600;700;800;900" },
+  { id: "Merriweather", label: "Merriweather", description: "Classic serif, book-like", googleQuery: "Merriweather:wght@400;700;900" },
+  { id: "Lora", label: "Lora", description: "Warm serif, easy reading", googleQuery: "Lora:wght@400;600;700" },
+  { id: "Playfair Display", label: "Playfair Display", description: "Elegant, editorial", googleQuery: "Playfair+Display:wght@400;600;700;900" },
+  { id: "Quicksand", label: "Quicksand", description: "Light & airy", googleQuery: "Quicksand:wght@400;600;700" },
+  { id: "Source Sans 3", label: "Source Sans", description: "Neutral & professional", googleQuery: "Source+Sans+3:wght@400;600;700;900" },
+  { id: "Crimson Text", label: "Crimson Text", description: "Traditional, literary", googleQuery: "Crimson+Text:wght@400;600;700" },
+  { id: "Comfortaa", label: "Comfortaa", description: "Rounded & gentle", googleQuery: "Comfortaa:wght@400;600;700" },
+];
+const FONT_SCALE_MIN = 0.85;
+const FONT_SCALE_MAX = 1.3;
+
+/**
+ * Injects (or updates) a <link> tag pointing at the Google Fonts CSS API
+ * for the requested family, then applies it app-wide via a CSS variable.
+ * The browser fetches and caches the font file itself the first time this
+ * runs — same standard HTTP/font cache every website relies on — so the
+ * font "downloads once, then stays cached" without any custom code needed.
+ */
+function applyFont(fontId: string) {
+  const font = FONT_CATALOGUE.find(f => f.id === fontId) || FONT_CATALOGUE[0];
+  const linkId = "app-google-font-link";
+  let link = document.getElementById(linkId) as HTMLLinkElement | null;
+  if (!link) {
+    link = document.createElement("link");
+    link.id = linkId;
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }
+  link.href = `https://fonts.googleapis.com/css2?family=${font.googleQuery}&display=swap`;
+  document.documentElement.style.setProperty("--app-font", `"${font.id}"`);
+}
+
+function applyFontScale(scale: number) {
+  const clamped = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, scale));
+  document.documentElement.style.setProperty("--app-font-scale", String(clamped));
+}
 
 function useStore<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
@@ -557,16 +608,20 @@ export default function App() {
   const activeUser = normalizeUser(user, language);
   const isOnboarded = activeUser?.hasCompletedOnboarding ?? onboarded;
   const setupPath = !language ? "/language" : !activeUser || !token ? "/auth" : !isOnboarded ? "/onboarding" : "/app";
+  useEffect(() => {
+    applyFont(activeUser?.fontFamily || "Inter");
+    applyFontScale(activeUser?.fontScale ?? 1);
+  }, [activeUser?.fontFamily, activeUser?.fontScale]);
   return (
     <AppErrorBoundary>
     <Routes>
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
-      <Route path="/language" element={<LanguagePage current={language} onSelect={setLanguage} />} />
-      <Route path="/auth" element={<AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
+      <Route path="/language" element={activeUser && token && isOnboarded ? <Navigate to="/app" replace /> : <LanguagePage current={language} onSelect={setLanguage} />} />
+      <Route path="/auth" element={activeUser && token && isOnboarded ? <Navigate to="/app" replace /> : <AuthPage language={language ?? "en"} onLogin={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
       <Route path="/reset" element={<ResetPage />} />
       <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
-      <Route path="/onboarding" element={activeUser && token ? <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setLanguage(updatedUser.language); setOnboarded(true); setUser(updatedUser); }} /> : <Navigate to="/auth" replace />} />
+      <Route path="/onboarding" element={!activeUser || !token ? <Navigate to="/auth" replace /> : isOnboarded ? <Navigate to="/app" replace /> : <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setLanguage(updatedUser.language); setOnboarded(true); setUser(updatedUser); }} />} />
       <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} updateUser={setUser} setLanguage={setLanguage} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -833,7 +888,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
             const data = await api<any>("/auth/google", { method: "POST", body: JSON.stringify({ id_token: response.credential, language, client: "web" }) });
             const nextUser = mapUser(data.user);
             onLogin(nextUser, data.token);
-            navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
+            navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding", { replace: true });
           } catch (err) { setError(err instanceof Error ? err.message : "Google sign-in failed."); }
           finally { setBusy(false); }
         },
@@ -849,17 +904,17 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
     try {
       if (signup) {
         await api("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name: name.trim() }) });
-        sessionStorage.setItem("rs_pending_email", email); navigate("/verify");
+        sessionStorage.setItem("rs_pending_email", email); navigate("/verify", { replace: true });
       } else {
         const data = await api<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password, client: "web" }) });
         const nextUser = mapUser(data.user);
         onLogin(nextUser, data.token);
-        navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding");
+        navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding", { replace: true });
       }
     } catch (err) {
       if (err instanceof ApiError && err.data?.requiresVerification) {
         sessionStorage.setItem("rs_pending_email", email);
-        navigate("/verify");
+        navigate("/verify", { replace: true });
         return;
       }
       setError(err instanceof Error ? err.message : "Unable to continue.");
@@ -902,7 +957,7 @@ function VerifyPage({ onVerified }: { onVerified: (user: User, token: string) =>
     <p className="lead">{tr(language, `Enter the real 6-digit code sent to ${pending}. You can also open this page directly from your verification email.`, `Entrez le vrai code a 6 chiffres envoye a ${pending}. Vous pouvez aussi ouvrir cette page directement depuis votre e-mail de verification.`)}</p>
     <Field label={tr(language, "Verification code", "Code de verification")} value={code} onChange={setCode} placeholder="000000" />
     {error && <p className="form-error">{error}</p>}
-    <button className="button primary full" disabled={code.length !== 6 || busy} onClick={async () => { try { setBusy(true); const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); const nextUser = mapUser(data.user); onVerified(nextUser, data.token); sessionStorage.removeItem("rs_pending_email"); navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding"); } catch (err) { setError(err instanceof Error ? err.message : tr(language, "Verification failed.", "La verification a echoue.")); } finally { setBusy(false); } }}>{busy ? tr(language, "Verifying...", "Verification...") : tr(language, "Verify and continue", "Verifier et continuer")} <span>{"->"}</span></button>
+    <button className="button primary full" disabled={code.length !== 6 || busy} onClick={async () => { try { setBusy(true); const data = await api<any>("/auth/verify-otp", { method:"POST", body:JSON.stringify({ email:pending, otp:code }) }); const nextUser = mapUser(data.user); onVerified(nextUser, data.token); sessionStorage.removeItem("rs_pending_email"); navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding", { replace: true }); } catch (err) { setError(err instanceof Error ? err.message : tr(language, "Verification failed.", "La verification a echoue.")); } finally { setBusy(false); } }}>{busy ? tr(language, "Verifying...", "Verification...") : tr(language, "Verify and continue", "Verifier et continuer")} <span>{"->"}</span></button>
     <button className="link-button" onClick={async () => { try { setBusy(true); setError(""); await api<any>("/auth/resend-otp", { method:"POST", body:JSON.stringify({ email:pending }) }); } catch (err) { setError(err instanceof Error ? err.message : tr(language, "Could not resend the code.", "Impossible de renvoyer le code.")); } finally { setBusy(false); } }}>{tr(language, "Resend code", "Renvoyer le code")}</button>
   </div></PublicShell>;
 }
@@ -1051,7 +1106,7 @@ function OnboardingPage({ language, token, user, onComplete }: { language:Lang; 
         dailyEmailEnabled: reminderSettings.dailyEmailEnabled,
         pushNotificationsEnabled: reminderSettings.pushNotificationsEnabled,
       });
-      navigate("/app");
+      navigate("/app", { replace: true });
     } finally {
       setSubmitting(false);
       finishingRef.current = false;
@@ -1185,7 +1240,26 @@ function SummaryCard({ name, language, topFocus, reminderHour, reminderMinute }:
 }
 
 function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { user: User; token: string; signOut: () => void; updateUser: (user: User | null) => void; setLanguage: (language: Lang | null) => void; language: Lang }) {
-  const [tab, setTab] = useState<AppTab>("home");
+  const [tab, setTabRaw] = useState<AppTab>("home");
+  const setTab = (nextTab: AppTab) => {
+    setTabRaw(current => {
+      if (nextTab === current) return current;
+      window.history.pushState({ appTab: nextTab }, "", window.location.pathname + window.location.search);
+      return nextTab;
+    });
+  };
+  useEffect(() => {
+    // Tag the very first history entry for this session so the browser's
+    // back button can step through in-app tabs (Home -> Prayers -> ...)
+    // before ever leaving the app itself.
+    window.history.replaceState({ appTab: "home" }, "", window.location.pathname + window.location.search);
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as { appTab?: AppTab } | null;
+      if (state?.appTab) setTabRaw(state.appTab);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [analytics, setAnalytics] = useState<Analytics>({ totalPrayers:0, visitCount:0, currentStreak:0, answeredPrayers:5, completedGoals:0 });
@@ -1511,11 +1585,21 @@ function GoalsScreen({ token, goals, refresh, language }: { token:string; goals:
 function ChallengesModal({ token, language, onClose }: { token: string; language: Lang; onClose: () => void }) {
   const t = (en: string, fr: string) => tr(language, en, fr);
   const [challenges, setChallenges] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestionText, setSuggestionText] = useState("");
+  const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
-    try { setChallenges(await api<any[]>("/challenges", {}, token)); }
+    try {
+      const [c, s] = await Promise.all([
+        api<any[]>("/challenges", {}, token),
+        api<any[]>("/challenges/suggestions", {}, token).catch(() => []),
+      ]);
+      setChallenges(c);
+      setSuggestions(s);
+    }
     catch { setChallenges([]); }
     finally { setLoading(false); }
   };
@@ -1532,6 +1616,20 @@ function ChallengesModal({ token, language, onClose }: { token: string; language
       const updated = await api<any>(`/challenges/${id}/check-in`, { method: "POST", body: JSON.stringify({}) }, token);
       setChallenges(current => current.map(c => c.id === id ? updated : c));
     } finally { setBusyId(null); }
+  };
+  const submitSuggestion = async () => {
+    const text = suggestionText.trim();
+    if (!text || submittingSuggestion) return;
+    setSubmittingSuggestion(true);
+    try {
+      const suggestion = await api<any>("/challenges/suggestions", { method: "POST", body: JSON.stringify({ text }) }, token);
+      setSuggestions(current => [suggestion, ...current]);
+      setSuggestionText("");
+    } catch (_e) {
+      window.alert(t("Couldn't submit your idea right now. Please try again.", "Impossible d'envoyer votre idee. Veuillez reessayer."));
+    } finally {
+      setSubmittingSuggestion(false);
+    }
   };
 
   return <div className="modal-backdrop" onClick={onClose}>
@@ -1555,6 +1653,14 @@ function ChallengesModal({ token, language, onClose }: { token: string; language
           </div>;
         })}
       </div>}
+      <p className="growth-section-title">{t("Suggest Your Own Challenge", "Suggerez votre propre defi")}</p>
+      <p>{t("Have an idea? Share it — our team reviews it, and it's saved to your account so you can track it.", "Une idee ? Partagez-la — notre equipe l'examine, et elle est enregistree dans votre compte.")}</p>
+      <textarea value={suggestionText} onChange={e => setSuggestionText(e.target.value)} placeholder={t('e.g. "21 Days praying for our nation"', 'ex. "21 jours de priere pour notre nation"')} rows={3} />
+      <button className="button primary full" disabled={!suggestionText.trim() || submittingSuggestion} onClick={submitSuggestion}>{submittingSuggestion ? t("Submitting...", "Envoi...") : t("Submit Idea", "Soumettre l'idee")}</button>
+      {suggestions.length > 0 && <div className="growth-card-list">
+        <p className="growth-section-title">{t("Your Submitted Ideas", "Vos idees soumises")}</p>
+        {suggestions.map(s => <div className="community-row" key={s.id}><span>{s.text}</span><span className="growth-badge">{(s.status || "submitted").toUpperCase()}</span></div>)}
+      </div>}
     </section>
   </div>;
 }
@@ -1565,14 +1671,18 @@ function FastingTrackerModal({ token, language, onClose }: { token: string; lang
   const [active, setActive] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState("00:00:00");
 
   const load = async () => {
+    setLoading(true);
+    setLoadError(false);
     try {
       const [a, h] = await Promise.all([api<any>("/fasts/active", {}, token), api<any[]>("/fasts", {}, token)]);
       setActive(a); setHistory(h);
-    } catch { setHistory([]); }
+    } catch { setLoadError(true); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -1594,14 +1704,17 @@ function FastingTrackerModal({ token, language, onClose }: { token: string; lang
 
   const start = async (fastType: string) => {
     setBusy(true);
+    setActionError(null);
     try { setActive(await api<any>("/fasts/start", { method: "POST", body: JSON.stringify({ fast_type: fastType }) }, token)); }
-    catch (err: any) { window.alert(err?.message || t("Could not start fast.", "Impossible de commencer le jeune.")); }
+    catch (err: any) { setActionError(err?.message || t("Could not start fast.", "Impossible de commencer le jeune.")); }
     finally { setBusy(false); }
   };
   const end = async (status: "completed" | "broken") => {
     if (!active) return;
     setBusy(true);
+    setActionError(null);
     try { await api(`/fasts/${active.id}/end`, { method: "POST", body: JSON.stringify({ status }) }, token); setActive(null); await load(); }
+    catch (err: any) { setActionError(err?.message || t("Could not update fast.", "Impossible de mettre a jour le jeune.")); }
     finally { setBusy(false); }
   };
 
@@ -1610,7 +1723,12 @@ function FastingTrackerModal({ token, language, onClose }: { token: string; lang
       <button className="modal-close" onClick={onClose} aria-label="Close">x</button>
       <p className="eyebrow">{t("Structured Growth", "Croissance structuree")}</p>
       <h2>{t("Fasting Tracker", "Suivi de jeune")}</h2>
-      {loading ? <p>{t("Loading...", "Chargement...")}</p> : active ? <div className="fasting-active">
+      {loading ? <p>{t("Loading...", "Chargement...")}</p> : loadError ? <>
+        <p className="form-error">{t("Couldn't load your fasting tracker right now.", "Impossible de charger le suivi de jeune.")}</p>
+        <button className="button secondary full" onClick={load}>{t("Try Again", "Reessayer")}</button>
+      </> : <>
+      {actionError && <p className="form-error">{actionError}</p>}
+      {active ? <div className="fasting-active">
         <p className="fasting-type">{types.find(x => x[0] === active.fast_type)?.[1] || "Fast"}</p>
         <p className="fasting-timer">{elapsed}</p>
         <p className="fasting-goal">{t(`Goal: ${active.goal_hours} hours`, `Objectif : ${active.goal_hours} heures`)}</p>
@@ -1620,6 +1738,7 @@ function FastingTrackerModal({ token, language, onClose }: { token: string; lang
         <div className="fasting-type-list">{types.map(([id, label]) => <button key={id} className="button secondary full" disabled={busy} onClick={() => start(id)}>{label}</button>)}</div>
       </>}
       {history.length > 0 && <div className="fasting-history"><p className="growth-section-title">{t("History", "Historique")}</p>{history.map(f => <div className="fasting-history-row" key={f.id}><span>{types.find(x => x[0] === f.fast_type)?.[1] || "Fast"}</span><b className={`fast-status ${f.status}`}>{f.status}</b></div>)}</div>}
+      </>}
     </section>
   </div>;
 }
@@ -1677,15 +1796,125 @@ function ReadingPlansModal({ token, language, onClose }: { token: string; langua
   </div>;
 }
 
+async function captureNodeToBlob(node: HTMLElement): Promise<Blob | null> {
+  try {
+    const html2canvas = (await import("html2canvas")).default;
+    const canvas = await html2canvas(node, { backgroundColor: null, scale: 2 });
+    return await new Promise(resolve => canvas.toBlob(b => resolve(b), "image/png"));
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function shareOrDownload(blobs: { blob: Blob; name: string }[]) {
+  const files = blobs.map(({ blob, name }) => new File([blob], name, { type: "image/png" }));
+  const nav = navigator as any;
+  if (nav.canShare && nav.canShare({ files })) {
+    try {
+      await nav.share({ files, text: "From my ReviveSpring Scripture Memory Cards" });
+      return;
+    } catch (_e) { /* fall through to download */ }
+  }
+  files.forEach(file => {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+function FlipCard3D({ reference, verse, language, glowColor, startFlipped, cardRef }: { reference: string; verse: string; language: Lang; glowColor?: string; startFlipped?: boolean; cardRef?: { front: React.RefObject<HTMLDivElement>; back: React.RefObject<HTMLDivElement> } }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const [flipped, setFlipped] = useState(!!startFlipped);
+  return <div className="flip3d-scene" onClick={() => !startFlipped && setFlipped(f => !f)}>
+    <div className={`flip3d-card ${flipped ? "flipped" : ""}`.trim()} style={glowColor ? { boxShadow: `0 0 0 3px ${glowColor}, 0 0 30px 6px ${glowColor}66` } : undefined}>
+      <div className="flip3d-face flip3d-front" ref={cardRef?.front}>
+        <span className="flip3d-icon">📖</span>
+        <b>{reference}</b>
+        <p>{t("Tap to reveal the verse", "Touchez pour reveler le verset")}</p>
+      </div>
+      <div className="flip3d-face flip3d-back" ref={cardRef?.back}>
+        <p className="flip3d-verse">"{verse}"</p>
+        <b>{reference}</b>
+      </div>
+    </div>
+  </div>;
+}
+
+function RecallReviewOverlay({ token, language, card, onClose }: { token: string; language: Lang; card: any; onClose: (changed: boolean) => void }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const submit = async () => {
+    if (!text.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const data = await api<any>(`/memory-cards/${card.id}/recall`, { method: "POST", body: JSON.stringify({ text: text.trim() }) }, token);
+      setResult(data);
+    } catch (_e) {
+      window.alert(t("Couldn't check your recall right now. Please try again.", "Impossible de verifier votre memoire. Veuillez reessayer."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const addNext = async (id: string) => {
+    try { await api(`/memory-cards/${id}/add`, { method: "POST", body: JSON.stringify({}) }, token); } catch (_e) { /* ignore */ }
+    onClose(true);
+  };
+
+  const passed = result?.passed === true;
+  return <div className="modal-backdrop recall-overlay">
+    <section className="mood-modal recall-modal" onClick={e => e.stopPropagation()}>
+      <button className="modal-close" onClick={() => onClose(!!result)} aria-label="Close">x</button>
+      <p className="eyebrow">{t("7-Day Recall Check", "Verification apres 7 jours")}</p>
+      <h2>{card.reference}</h2>
+      <p>{t("It's been 7 days. Without peeking, write out as much of this verse as you remember.", "Cela fait 7 jours. Sans regarder, ecrivez ce dont vous vous souvenez.")}</p>
+      {!result ? <>
+        <textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("Type the verse from memory...", "Ecrivez le verset de memoire...")} rows={5} />
+        <button className="button primary full" disabled={!text.trim() || submitting} onClick={submit}>{submitting ? t("Checking...", "Verification...") : t("Check My Recall", "Verifier ma memoire")}</button>
+      </> : <>
+        <FlipCard3D reference={card.reference} verse={result.card?.verse || card.verse} language={language} glowColor={passed ? "#3f8f48" : "#b85b48"} startFlipped />
+        <p className={`recall-result ${passed ? "pass" : "fail"}`}>
+          {passed
+            ? t(`🎉 You remembered it! (${result.similarity}% match) This verse is now mastered.`, `🎉 Vous vous en souvenez ! (${result.similarity}% de correspondance)`)
+            : t(`Not quite yet (${result.similarity}% match) — keep reviewing, you'll get it.`, `Pas encore (${result.similarity}% de correspondance) — continuez a reviser.`)}
+        </p>
+        <button className="button secondary full" onClick={() => onClose(true)}>{t("Done", "Termine")}</button>
+        {passed && result.next_suggested_card && <div className="growth-card recall-next-card">
+          <span className="flip3d-icon">✨</span>
+          <b>{t("New Memory Card Ready!", "Nouvelle carte prete !")}</b>
+          <p>{t(`${result.next_suggested_card.reference} will be ready to recall in 7 days once you add it.`, `${result.next_suggested_card.reference} sera prete dans 7 jours.`)}</p>
+          <div className="community-row">
+            <button className="button ghost" onClick={() => onClose(true)}>{t("Maybe Later", "Plus tard")}</button>
+            <button className="button primary" onClick={() => addNext(result.next_suggested_card.id)}>{t("Add This Card", "Ajouter cette carte")}</button>
+          </div>
+        </div>}
+      </>}
+    </section>
+  </div>;
+}
+
 function MemoryCardsModal({ token, language, onClose }: { token: string; language: Lang; onClose: () => void }) {
   const t = (en: string, fr: string) => tr(language, en, fr);
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [flipped, setFlipped] = useState<Record<string, boolean>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dueCard, setDueCard] = useState<any>(null);
+  const frontRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
-    try { setCards(await api<any[]>("/memory-cards", {}, token)); }
+    try {
+      const list = await api<any[]>("/memory-cards", {}, token);
+      setCards(list);
+      const due = await api<any[]>("/memory-cards/due", {}, token).catch(() => []);
+      if (due.length) setDueCard(due[0]);
+    }
     catch { setCards([]); }
     finally { setLoading(false); }
   };
@@ -1703,13 +1932,11 @@ function MemoryCardsModal({ token, language, onClose }: { token: string; languag
       setCards(current => current.map(c => c.id === id ? updated : c));
     } finally { setBusyId(null); }
   };
-  const quiz = async (id: string, passed: boolean) => {
-    setBusyId(id);
-    try {
-      const updated = await api<any>(`/memory-cards/${id}/quiz`, { method: "POST", body: JSON.stringify({ passed }) }, token);
-      setCards(current => current.map(c => c.id === id ? updated : c));
-      if (passed) window.alert(t("🎉 Verse mastered!", "🎉 Verset maitrise !"));
-    } finally { setBusyId(null); }
+  const share = async (front: boolean, back: boolean) => {
+    const blobs: { blob: Blob; name: string }[] = [];
+    if (front && frontRef.current) { const b = await captureNodeToBlob(frontRef.current); if (b) blobs.push({ blob: b, name: "memory-card-front.png" }); }
+    if (back && backRef.current) { const b = await captureNodeToBlob(backRef.current); if (b) blobs.push({ blob: b, name: "memory-card-back.png" }); }
+    if (blobs.length) await shareOrDownload(blobs);
   };
 
   return <div className="modal-backdrop" onClick={onClose}>
@@ -1717,7 +1944,7 @@ function MemoryCardsModal({ token, language, onClose }: { token: string; languag
       <button className="modal-close" onClick={onClose} aria-label="Close">x</button>
       <p className="eyebrow">{t("Structured Growth", "Croissance structuree")}</p>
       <h2>{t("Scripture Memory Cards", "Cartes memoire bibliques")}</h2>
-      <p>{t("Add a verse, flip the card to review it, then quiz yourself after 7 days.", "Ajoutez un verset, retournez la carte pour reviser, puis testez-vous apres 7 jours.")}</p>
+      <p>{t("Add a verse, flip the card to review it, then in 7 days write it from memory to master it.", "Ajoutez un verset, retournez la carte, puis ecrivez-le de memoire apres 7 jours.")}</p>
       {loading ? <p>{t("Loading...", "Chargement...")}</p> : <div className="growth-card-list">
         {cards.map(card => {
           const busy = busyId === card.id;
@@ -1728,18 +1955,30 @@ function MemoryCardsModal({ token, language, onClose }: { token: string; languag
               <button className="button primary full" disabled={busy} onClick={() => addCard(card.id)}>{t("Add", "Ajouter")}</button>
             </div>;
           }
-          const isFlipped = !!flipped[card.id];
+          const expanded = expandedId === card.id;
           return <div className="growth-card" key={card.id}>
-            <div className="memory-card-header"><b>{card.reference}</b>{card.mastered ? <span className="growth-badge mastered">{t("Mastered", "Maitrise")}</span> : card.days_until_quiz > 0 ? <span className="growth-badge">{t(`Quiz in ${card.days_until_quiz}d`, `Quiz dans ${card.days_until_quiz}j`)}</span> : null}</div>
-            <button className={`memory-flip-card ${isFlipped ? "flipped" : ""}`.trim()} onClick={() => setFlipped({ ...flipped, [card.id]: !isFlipped })}>{isFlipped ? card.verse : t("Tap to reveal the verse", "Touchez pour reveler le verset")}</button>
-            <div className="fasting-actions">
-              <button className="button ghost" disabled={busy} onClick={() => review(card.id)}>{card.reviewed_today ? t("Reviewed today", "Revise aujourd'hui") : t("Mark Reviewed", "Marquer comme revise")}</button>
-              {card.quiz_unlocked && <button className="button primary" disabled={busy} onClick={() => { if (window.confirm(t("Recite this verse from memory. Did you get it right?", "Recitez ce verset de memoire. L'avez-vous reussi ?"))) quiz(card.id, true); else quiz(card.id, false); }}>{t("Take Quiz", "Faire le quiz")}</button>}
-            </div>
+            <button className="memory-card-header memory-card-toggle" onClick={() => setExpandedId(expanded ? null : card.id)}>
+              <b>{card.reference}</b>
+              {card.mastered ? <span className="growth-badge mastered">{t("Mastered", "Maitrise")}</span> : card.days_until_quiz > 0 ? <span className="growth-badge">{t(`Recall in ${card.days_until_quiz}d`, `Rappel dans ${card.days_until_quiz}j`)}</span> : null}
+              <span className={`memory-chevron ${expanded ? "open" : ""}`.trim()}>⌄</span>
+            </button>
+            {expanded && <div className="memory-card-expanded">
+              <FlipCard3D reference={card.reference} verse={card.verse} language={language} cardRef={{ front: frontRef, back: backRef }} />
+              <div className="fasting-actions">
+                <button className="button ghost" disabled={busy} onClick={() => review(card.id)}>{card.reviewed_today ? t("Reviewed today", "Revise aujourd'hui") : t("Mark Reviewed", "Marquer comme revise")}</button>
+                <div className="memory-share-group">
+                  <button className="button ghost" onClick={() => share(true, false)} title={t("Share front", "Partager le recto")}>🖼️ {t("Front", "Recto")}</button>
+                  <button className="button ghost" onClick={() => share(false, true)} title={t("Share back", "Partager le verso")}>🖼️ {t("Back", "Verso")}</button>
+                  <button className="button ghost" onClick={() => share(true, true)} title={t("Share both", "Partager les deux")}>🖼️ {t("Both", "Les deux")}</button>
+                </div>
+              </div>
+              {card.quiz_unlocked && <button className="button primary full" onClick={() => setDueCard(card)}>{t("Recall From Memory", "Se rappeler de memoire")}</button>}
+            </div>}
           </div>;
         })}
       </div>}
     </section>
+    {dueCard && <RecallReviewOverlay token={token} language={language} card={dueCard} onClose={(changed) => { setDueCard(null); if (changed) load(); }} />}
   </div>;
 }
 function WellnessScreen({ token, onNavigate, user }: { token: string; onNavigate: (tab: AppTab) => void; user: User }) {
@@ -1918,13 +2157,17 @@ function WeeklyReviewModal({ token, language, onClose }: { token: string; langua
   const [reflection, setReflection] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(false);
     api<any>(`/weekly-review?language=${language}`, {}, token)
       .then(data => { setReview(data); setReflection(data.user_reflection || ""); })
-      .catch(() => setReview(null))
+      .catch(() => { setReview(null); setError(true); })
       .finally(() => setLoading(false));
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (!reflection.trim() || saving) return;
@@ -1932,6 +2175,8 @@ function WeeklyReviewModal({ token, language, onClose }: { token: string; langua
     try {
       const data = await api<any>("/weekly-review/reflection", { method: "POST", body: JSON.stringify({ reflection: reflection.trim(), language }) }, token);
       setReview(data);
+    } catch (_e) {
+      window.alert(t("Couldn't save your reflection right now. Please try again.", "Impossible d'enregistrer votre reflexion. Veuillez reessayer."));
     } finally {
       setSaving(false);
     }
@@ -1942,7 +2187,10 @@ function WeeklyReviewModal({ token, language, onClose }: { token: string; langua
     <section className="mood-modal weekly-review-modal" onClick={e => e.stopPropagation()}>
       <button className="modal-close" onClick={onClose} aria-label="Close">x</button>
       <p className="eyebrow">{t("Weekly Spiritual Review", "Bilan spirituel hebdomadaire")}</p>
-      {loading ? <p>{t("Loading...", "Chargement...")}</p> : <>
+      {loading ? <p>{t("Loading...", "Chargement...")}</p> : error ? <>
+        <p className="form-error">{t("Couldn't load your weekly review right now.", "Impossible de charger votre bilan hebdomadaire.")}</p>
+        <button className="button secondary full" onClick={load}>{t("Try Again", "Reessayer")}</button>
+      </> : <>
         <h2>{t(`Week of ${review?.week_start_date || ""}`, `Semaine du ${review?.week_start_date || ""}`)}</h2>
         <p>{review?.ai_summary || t("Your week's reflection will appear here.", "Votre reflexion de la semaine apparaitra ici.")}</p>
         <div className="weekly-review-stats">
@@ -2763,12 +3011,16 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
   const [pushEnabled, setPushEnabled] = useState(user.pushNotificationsEnabled !== false);
   const [selectedLanguage, setSelectedLanguage] = useState<Lang>(language);
   const [bibleVersion, setBibleVersion] = useState<string>(user.bibleVersion || "NIV");
+  const [fontFamily, setFontFamily] = useState<string>(user.fontFamily || "Inter");
+  const [fontScale, setFontScale] = useState<number>(user.fontScale ?? 1);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteFeedback, setDeleteFeedback] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [showMilestones, setShowMilestones] = useState(false);
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const t = (en: string, fr: string) => tr(selectedLanguage, en, fr);
   const navigate = useNavigate();
   useEffect(() => {
@@ -2776,8 +3028,10 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
     setPushEnabled(user.pushNotificationsEnabled !== false);
     setSelectedLanguage(language);
     setBibleVersion(user.bibleVersion || "NIV");
+    setFontFamily(user.fontFamily || "Inter");
+    setFontScale(user.fontScale ?? 1);
   }, [user, language]);
-  const saveProfile = async (changes: Partial<Pick<User, "language" | "dailyEmailEnabled" | "pushNotificationsEnabled" | "bibleVersion">>) => {
+  const saveProfile = async (changes: Partial<Pick<User, "language" | "dailyEmailEnabled" | "pushNotificationsEnabled" | "bibleVersion" | "fontFamily" | "fontScale">>) => {
     setSavingSettings(true);
     try {
       const data = await api<any>("/auth/me", {
@@ -2787,6 +3041,8 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
           dailyEmailEnabled: changes.dailyEmailEnabled ?? emails,
           pushNotificationsEnabled: changes.pushNotificationsEnabled ?? pushEnabled,
           bibleVersion: changes.bibleVersion ?? bibleVersion,
+          fontFamily: changes.fontFamily ?? fontFamily,
+          fontScale: changes.fontScale ?? fontScale,
           timezone: user.timezone || detectTimezone(),
           reminderHour: typeof user.reminderHour === "number" ? user.reminderHour : 9,
           reminderMinute: typeof user.reminderMinute === "number" ? user.reminderMinute : 0,
@@ -2799,6 +3055,8 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setEmails(nextUser.dailyEmailEnabled !== false);
       setPushEnabled(nextUser.pushNotificationsEnabled !== false);
       setBibleVersion(nextUser.bibleVersion || "NIV");
+      setFontFamily(nextUser.fontFamily || "Inter");
+      setFontScale(nextUser.fontScale ?? 1);
       localStorage.setItem("rs_language", nextUser.language);
       localStorage.setItem("rs_user", JSON.stringify(nextUser));
     } finally {
@@ -2819,7 +3077,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setDeleting(false);
     }
   };
-  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}</>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</h3><p>{user.hasPassword ? t("Update the password for this account.", "Mettez a jour le mot de passe de ce compte.") : t("Add a password so you can also sign in with email, not just Google.", "Ajoutez un mot de passe pour aussi vous connecter par e-mail.")}</p><button className="button secondary full" onClick={() => setShowPassword(true)}>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</button></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel><Panel><h3>{t("Appearance", "Apparence")}</h3><p>{t(`${fontFamily} · ${Math.round(fontScale * 100)}% text size`, `${fontFamily} · ${Math.round(fontScale * 100)}% taille du texte`)}</p><button className="button secondary full" onClick={() => setShowAppearance(true)}>{t("Change Font & Size", "Changer la police et la taille")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}{showAppearance && <AppearanceModal fontFamily={fontFamily} fontScale={fontScale} saving={savingSettings} onSelectFont={(value) => saveProfile({ fontFamily: value })} onSelectScale={(value) => saveProfile({ fontScale: value })} onClose={() => setShowAppearance(false)} language={language} />}{showPassword && <PasswordModal token={token} language={language} hasPassword={!!user.hasPassword} onDone={() => setShowPassword(false)} />}</>;
 }
 
 function MilestonesModal({ token, language, onClose }: { token: string; language: Lang; onClose: () => void }) {
@@ -2858,6 +3116,104 @@ function MilestonesModal({ token, language, onClose }: { token: string; language
   </div>;
 }
 
+function AppearanceModal({ fontFamily, fontScale, saving, onSelectFont, onSelectScale, onClose, language }: { fontFamily: string; fontScale: number; saving: boolean; onSelectFont: (value: string) => void; onSelectScale: (value: number) => void; onClose: () => void; language: Lang }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const [liveScale, setLiveScale] = useState(fontScale);
+
+  const selectFont = (fontId: string) => {
+    applyFont(fontId); // instant visual preview across the whole app
+    onSelectFont(fontId);
+  };
+  const commitScale = (value: number) => {
+    applyFontScale(value);
+    onSelectScale(value);
+  };
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="mood-modal appearance-modal" onClick={e => e.stopPropagation()}>
+      <button className="modal-close" onClick={onClose} aria-label="Close">x</button>
+      <p className="eyebrow">{t("Appearance", "Apparence")}</p>
+      <h2>{t("Choose a font and text size", "Choisissez une police et une taille de texte")}</h2>
+      <p>{t("New fonts download once from Google Fonts, then stay cached in your browser.", "Les nouvelles polices se telechargent une fois depuis Google Fonts, puis restent en cache dans votre navigateur.")}</p>
+      <p className="growth-section-title">{t("Text Size", "Taille du texte")}</p>
+      <div className="appearance-scale-row">
+        <span className="appearance-a-sm">A</span>
+        <input
+          type="range"
+          min={0.85}
+          max={1.3}
+          step={0.05}
+          value={liveScale}
+          onChange={e => { const value = Number(e.target.value); setLiveScale(value); applyFontScale(value); }}
+          onMouseUp={e => commitScale(Number((e.target as HTMLInputElement).value))}
+          onTouchEnd={e => commitScale(Number((e.target as HTMLInputElement).value))}
+        />
+        <span className="appearance-a-lg">A</span>
+        <b>{Math.round(liveScale * 100)}%</b>
+      </div>
+      <div className="appearance-preview" style={{ fontFamily: `"${fontFamily}"`, fontSize: `${15 * liveScale}px` }}>
+        {t("Come as you are — this is your daily space for prayer and peace.", "Venez comme vous etes — c'est votre espace quotidien de priere et de paix.")}
+      </div>
+      <p className="growth-section-title">{t("Font", "Police")}</p>
+      <div className="appearance-font-list">
+        {FONT_CATALOGUE.map(font => {
+          const selected = font.id === fontFamily;
+          return <button key={font.id} className={`appearance-font-row ${selected ? "selected" : ""}`.trim()} onClick={() => selectFont(font.id)}>
+            <div>
+              <b style={{ fontFamily: `"${font.id}"` }}>{font.label}</b>
+              <p>{font.description}</p>
+            </div>
+            {selected && (saving ? <span className="appearance-spinner" /> : <span className="appearance-check">✓</span>)}
+          </button>;
+        })}
+      </div>
+    </section>
+  </div>;
+}
+
+function PasswordModal({ token, language, hasPassword, onDone }: { token: string; language: Lang; hasPassword: boolean; onDone: () => void }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (newPassword.length < 6) { setError(t("Password must be at least 6 characters.", "Le mot de passe doit contenir au moins 6 caracteres.")); return; }
+    if (newPassword !== confirmPassword) { setError(t("Passwords don't match.", "Les mots de passe ne correspondent pas.")); return; }
+    if (hasPassword && !currentPassword) { setError(t("Enter your current password.", "Entrez votre mot de passe actuel.")); return; }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (hasPassword) {
+        await api("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }, token);
+      } else {
+        await api("/auth/set-password", { method: "POST", body: JSON.stringify({ newPassword }) }, token);
+      }
+      window.alert(hasPassword ? t("Password updated.", "Mot de passe mis a jour.") : t("Password created — you can now sign in with email too.", "Mot de passe cree — vous pouvez maintenant vous connecter par e-mail aussi."));
+      onDone();
+    } catch (err: any) {
+      setError(err?.message || t("Couldn't save your password right now. Please try again.", "Impossible d'enregistrer le mot de passe. Veuillez reessayer."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <div className="modal-backdrop" onClick={onDone}>
+    <section className="mood-modal" onClick={e => e.stopPropagation()}>
+      <button className="modal-close" onClick={onDone} aria-label="Close">x</button>
+      <p className="eyebrow">{hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</p>
+      <h2>{hasPassword ? t("Enter your current password, then choose a new one.", "Entrez votre mot de passe actuel, puis choisissez-en un nouveau.") : t("Add a password so you can sign in with either Google or your email.", "Ajoutez un mot de passe pour vous connecter avec Google ou par e-mail.")}</h2>
+      {hasPassword && <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder={t("Current password", "Mot de passe actuel")} />}
+      <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={t("New password", "Nouveau mot de passe")} />
+      <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder={t("Confirm new password", "Confirmez le nouveau mot de passe")} />
+      {error && <p className="form-error">{error}</p>}
+      <button className="button primary full" disabled={submitting} onClick={submit}>{submitting ? t("Saving...", "Enregistrement...") : hasPassword ? t("Update Password", "Mettre a jour") : t("Create Password", "Creer le mot de passe")}</button>
+    </section>
+  </div>;
+}
 const ADMIN_SECTIONS = [
   ["overview", "Overview"],
   ["users", "Users"],
@@ -3034,7 +3390,7 @@ function AdminControlCenter({ token }: { token: string }) {
     {section === "subscriptions" && <div className="admin-section-grid">
       <Panel><SectionTitle title="Subscription management" subtitle="Change a user's plan manually." /><AdminUserList users={users} actions={(user) => <select value={user.subscriptionStatus || "free"} onChange={e => updateUser(user.id, "/plan", { plan: e.target.value }, "Plan updated.")}><option value="free">Free</option><option value="standard">Standard</option><option value="premium">Premium</option></select>} /></Panel>
       <AdminModule title="Revenue reports" body="Use settings to store Stripe and RevenueCat links or report notes until payment webhooks are connected." items={[`Stripe: ${settingsMap.stripe_dashboard_url || "Not set"}`, `RevenueCat: ${settingsMap.revenuecat_dashboard_url || "Not set"}`, `Monthly note: ${settingsMap.monthly_revenue_note || "Not set"}`]} />
-      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note", "subscription_currency", "subscription_first_term_months", "subscription_first_term_discount_percent", "subscription_standard_price_usd", "subscription_premium_price_usd", "subscription_google_play_standard_product_id", "subscription_google_play_premium_product_id", "ads_enabled", "ads_banner_enabled", "ai_ad_unlock_enabled", "ai_ad_daily_limit", "ad_banner_title_en", "ad_banner_title_fr", "ad_banner_body_en", "ad_banner_body_fr", "ad_banner_cta_en", "ad_banner_cta_fr", "ai_ad_title_en", "ai_ad_title_fr", "ai_ad_body_en", "ai_ad_body_fr", "ai_ad_cta_en", "ai_ad_cta_fr"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note", "subscription_currency", "subscription_first_term_months", "subscription_renewal_term_months", "subscription_first_term_discount_percent", "subscription_standard_price_usd", "subscription_premium_price_usd", "subscription_google_play_standard_product_id", "subscription_google_play_premium_product_id", "ads_enabled", "ads_banner_enabled", "ai_ad_unlock_enabled", "ai_ad_daily_limit", "ad_banner_title_en", "ad_banner_title_fr", "ad_banner_body_en", "ad_banner_body_fr", "ad_banner_cta_en", "ad_banner_cta_fr", "ai_ad_title_en", "ai_ad_title_fr", "ai_ad_body_en", "ai_ad_body_fr", "ai_ad_cta_en", "ai_ad_cta_fr"]} settings={settingsMap} onSave={saveSetting} /></Panel>
     </div>}
 
     {section === "communication" && <div className="admin-section-grid">
