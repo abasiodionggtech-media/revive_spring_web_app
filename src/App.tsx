@@ -97,6 +97,30 @@ class ApiError extends Error {
 }
 
 const API_URL = import.meta.env.VITE_API_URL || "https://revivespring.onrender.com/api";
+// Static media (e.g. the onboarding intro video) is served outside the
+// /api prefix — see src/index.js's app.use('/media', ...).
+const MEDIA_BASE_URL = API_URL.endsWith("/api") ? API_URL.slice(0, -"/api".length) : API_URL;
+const INTRO_VIDEO_URL = `${MEDIA_BASE_URL}/media/intro-video.mp4`;
+
+// Preloads the onboarding intro video as a Blob while onboarding is in
+// progress, so it can play instantly (from an in-memory object URL) once
+// the user reaches the video screen, instead of waiting on the network
+// right at that moment. There's no browser equivalent of "delete the file
+// afterward" the way a native app can — releasing the Blob and revoking
+// the object URL (see IntroVideoPage) is the closest real equivalent.
+const introVideoCache: { blob: Blob | null; promise: Promise<void> | null; failed: boolean } = {
+  blob: null,
+  promise: null,
+  failed: false,
+};
+
+function startIntroVideoPreload() {
+  if (introVideoCache.promise) return;
+  introVideoCache.promise = fetch(INTRO_VIDEO_URL)
+    .then(res => { if (!res.ok) throw new Error("bad response"); return res.blob(); })
+    .then(blob => { introVideoCache.blob = blob; })
+    .catch(() => { introVideoCache.failed = true; });
+}
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const IUBENDA_PRIVACY_URL = "https://www.iubenda.com/privacy-policy/60287717";
 const IUBENDA_COOKIE_URL = "https://www.iubenda.com/privacy-policy/60287717/cookie-policy";
@@ -165,10 +189,23 @@ async function api<T>(path: string, options: RequestInit = {}, token?: string): 
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (_networkError) {
+    // The browser couldn't even complete the request (no server response at
+    // all) — almost always a dead/unreachable server, a CORS rejection, or
+    // no internet connection. The raw "Failed to fetch" message means
+    // nothing to a user, so replace it with something actionable.
+    throw new ApiError(
+      "Couldn't reach the server. Please check your connection and try again.",
+      0,
+      null,
+    );
+  }
   const data = response.status === 204 ? null : await response.json();
   if (!response.ok) throw new ApiError(data?.message || "Request failed.", response.status, data);
   return data as T;
@@ -622,6 +659,7 @@ export default function App() {
       <Route path="/reset" element={<ResetPage />} />
       <Route path="/verify" element={<VerifyPage onVerified={(nextUser, nextToken) => { setLanguage(nextUser.language); setUser(nextUser); setToken(nextToken); setOnboarded(!!nextUser.hasCompletedOnboarding); }} />} />
       <Route path="/onboarding" element={!activeUser || !token ? <Navigate to="/auth" replace /> : isOnboarded ? <Navigate to="/app" replace /> : <OnboardingPage language={language ?? "en"} token={token} user={activeUser} onComplete={(updatedUser) => { setLanguage(updatedUser.language); setOnboarded(true); setUser(updatedUser); }} />} />
+      <Route path="/intro-video" element={!activeUser || !token ? <Navigate to="/auth" replace /> : <IntroVideoPage />} />
       <Route path="/app" element={activeUser && token && isOnboarded ? <MainApp user={activeUser} token={token} signOut={() => { setUser(null); setToken(null); }} updateUser={setUser} setLanguage={setLanguage} language={language ?? "en"} /> : <Navigate to={setupPath} replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -652,6 +690,36 @@ function Brand({ compact = false }: { compact?: boolean }) {
 
 function LegalLinks({ language, compact = false }: { language: Lang; compact?: boolean }) {
   return <div className={`legal-links ${compact ? "compact" : ""}`.trim()}><a href={IUBENDA_PRIVACY_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Privacy Policy">{tr(language, "Privacy Policy", "Politique de confidentialite")}</a><a href={IUBENDA_COOKIE_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Cookie Policy">{tr(language, "Cookie Policy", "Politique relative aux cookies")}</a></div>;
+}
+
+const SIGN_IN_LOADING_LINES: [string, string][] = [
+  ["Cooking your daily prayer points...", "Preparation de vos points de priere du jour..."],
+  ["Having a personal time to pray grows you spiritually.", "Avoir un temps personnel de priere vous fait grandir spirituellement."],
+  ["Gathering a fresh verse just for you...", "Recherche d'un verset frais rien que pour vous..."],
+  ["A quiet moment with God can change your whole day.", "Un moment de calme avec Dieu peut changer toute votre journee."],
+  ["Warming up your prayer streak...", "Reveil de votre serie de prieres..."],
+  ["Getting your spiritual growth score ready...", "Preparation de votre score de croissance spirituelle..."],
+  ["Faithfulness is built one small, quiet day at a time.", "La fidelite se construit un jour paisible a la fois."],
+  ["Lighting the way to your daily goals...", "Eclairage du chemin vers vos objectifs du jour..."],
+  ["You don't need many words to be heard by God.", "Vous n'avez pas besoin de beaucoup de mots pour etre entendu de Dieu."],
+  ["Almost there — setting a quiet space just for you...", "Presque termine — preparation d'un espace calme pour vous..."],
+];
+
+function SignInLoadingScreen({ language }: { language: Lang }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setIndex(i => (i + 1) % SIGN_IN_LOADING_LINES.length);
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, []);
+  const line = SIGN_IN_LOADING_LINES[index];
+  return <div className="signin-loading-screen">
+    <div className="signin-loading-orb"><span className="signin-loading-orb-inner" /></div>
+    <p className="signin-loading-eyebrow">{tr(language, "Getting things ready", "Preparation en cours")}</p>
+    <p className="signin-loading-line" key={index}>{tr(language, line[0], line[1])}</p>
+    <div className="signin-loading-dots"><span /><span /><span /></div>
+  </div>;
 }
 
 function UserAvatar({ user, className = "" }: { user: User; className?: string }) {
@@ -886,10 +954,22 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
           setBusy(true); setError("");
           try {
             const data = await api<any>("/auth/google", { method: "POST", body: JSON.stringify({ id_token: response.credential, language, client: "web" }) });
+            if (data.requiresVerification) {
+              sessionStorage.setItem("rs_pending_email", data.email || email);
+              navigate("/verify", { replace: true });
+              return;
+            }
             const nextUser = mapUser(data.user);
             onLogin(nextUser, data.token);
             navigate(nextUser.hasCompletedOnboarding ? "/app" : "/onboarding", { replace: true });
-          } catch (err) { setError(err instanceof Error ? err.message : "Google sign-in failed."); }
+          } catch (err) {
+            if (err instanceof ApiError && err.data?.requiresVerification) {
+              sessionStorage.setItem("rs_pending_email", err.data?.email || email);
+              navigate("/verify", { replace: true });
+              return;
+            }
+            setError(err instanceof Error ? err.message : "Google sign-in failed.");
+          }
           finally { setBusy(false); }
         },
       });
@@ -921,6 +1001,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
     }
     finally { setBusy(false); }
   };
+  if (busy) return <PublicShell><SignInLoadingScreen language={language} /></PublicShell>;
   return <PublicShell><div className="auth-card">
     <Brand /><p className="kicker">{tr(language, "Welcome to your quiet space", "Bienvenue dans votre espace paisible")}</p><h1>{signup ? tr(language, "Create your account", "Creez votre compte") : tr(language, "Welcome back", "Bon retour")}</h1>
     <p className="lead">{signup ? tr(language, "Start a daily rhythm shaped around your faith.", "Commencez un rythme quotidien faconne autour de votre foi.") : tr(language, "Continue your prayer and reflection journey.", "Poursuivez votre parcours de priere et de reflection.")}</p>
@@ -1036,6 +1117,73 @@ function PublicShell({ children }: { children: React.ReactNode }) {
   return <main className="public-shell"><div className="public-aside"><Brand /><div><p className="eyebrow">{tr(language, "Revive your spirit. Renew your day.", "Ranimez votre esprit. Renouvelez votre journee.")}</p><h2>{tr(language, "A calmer place to pray, reflect, and grow with purpose.", "Un endroit plus paisible pour prier, reflechir et grandir avec intention.")}</h2><p>{tr(language, "Daily guidance meets real life, one faithful step at a time.", "Un accompagnement quotidien pour la vraie vie, un pas fidele a la fois.")}</p></div><div className="aside-verse"><span>{tr(language, "Daily reflection", "Reflexion du jour")}</span><q className="fade-quote" key={active.reference}>{active.verse}</q><b>{active.reference}</b></div></div><div className="public-main">{children}<LegalLinks language={language} compact /></div></main>;
 }
 
+function IntroVideoPage() {
+  const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const finishedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let localUrl: string | null = null;
+
+    (async () => {
+      // Give the background preload (started when onboarding began) a
+      // moment to finish if it hasn't already, then fall back to letting
+      // the <video> tag stream it directly over the network.
+      if (!introVideoCache.blob && introVideoCache.promise) {
+        await Promise.race([
+          introVideoCache.promise,
+          new Promise(resolve => setTimeout(resolve, 12000)),
+        ]);
+      }
+      if (cancelled) return;
+      if (introVideoCache.blob) {
+        localUrl = URL.createObjectURL(introVideoCache.blob);
+        setObjectUrl(localUrl);
+      } else if (introVideoCache.failed) {
+        setFailed(true);
+      } else {
+        setObjectUrl(INTRO_VIDEO_URL);
+      }
+      setReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (localUrl) URL.revokeObjectURL(localUrl);
+    };
+  }, []);
+
+  const finish = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    // Release the cached blob from memory now that it's been watched —
+    // the closest browser equivalent of deleting a downloaded file.
+    introVideoCache.blob = null;
+    introVideoCache.promise = null;
+    navigate("/app", { replace: true });
+  };
+
+  return <div className="intro-video-screen">
+    <div className="intro-video-card">
+      {!ready ? <div className="intro-video-loading"><span /></div>
+        : failed ? <div className="intro-video-loading"><span className="intro-video-fail">Video unavailable</span></div>
+        : <video
+            ref={videoRef}
+            src={objectUrl || undefined}
+            className="intro-video-el"
+            autoPlay
+            playsInline
+            onEnded={finish}
+          />}
+    </div>
+    <button className="intro-video-skip" onClick={finish}>{failed ? "Continue" : "Skip"}</button>
+  </div>;
+}
+
 function OnboardingPage({ language, token, user, onComplete }: { language:Lang; token: string; user: User; onComplete: (user: User) => void }) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
@@ -1046,6 +1194,7 @@ function OnboardingPage({ language, token, user, onComplete }: { language:Lang; 
   const [submitting, setSubmitting] = useState(false);
   const finishingRef = useRef(false);
   const navigate = useNavigate();
+  useEffect(() => { startIntroVideoPreload(); }, []);
   const step = ONBOARDING_STEPS[index];
   const selected = answers[step.id] || [];
   const canContinue = step.optional
@@ -1106,7 +1255,7 @@ function OnboardingPage({ language, token, user, onComplete }: { language:Lang; 
         dailyEmailEnabled: reminderSettings.dailyEmailEnabled,
         pushNotificationsEnabled: reminderSettings.pushNotificationsEnabled,
       });
-      navigate("/app", { replace: true });
+      navigate("/intro-video", { replace: true });
     } finally {
       setSubmitting(false);
       finishingRef.current = false;
@@ -1432,7 +1581,7 @@ function HomeScreen({ user, token, goals, analytics, refresh, openAi, openPrayer
   const streakAtGrace = isStreakAtGraceDay(analytics);
   return <><section className="welcome-row"><div><p className="eyebrow">{t("A fresh spring for your spirit today", "Une nouvelle source pour votre esprit aujourd'hui")}</p><h2>{t("Good morning", "Bonjour")}, {firstName}</h2></div><button className="button primary" onClick={openAi}>{t("Ask AI Companion", "Demander a l'assistant IA")}</button></section>
     <div className="dashboard-grid"><div className="main-column">{seasonalEvents.filter(e => e.is_current).slice(0, 1).map(e => <div className="seasonal-event-banner" key={e.id}><b>{e.title}</b><p>{e.description}</p></div>)}<article className="verse-card fade-panel" key={activeQuote.reference}><p>{t("Verse of the day", "Verset du jour")}</p><q>{activeQuote.verse}</q><b>{activeQuote.reference}</b></article><GrowthScoreCard growthScore={growthScore} language={user.language} /><DailyMannaCard manna={dailyManna} onClaim={claimDailyManna} language={user.language} /><DeclarationCard declaration={declaration} onConfirm={confirmDeclaration} language={user.language} /><button className="button ghost full" onClick={() => setShowVerseMoment(true)}>{t("Verse of the Moment — tap for a fresh word", "Verset du moment — touchez pour un mot frais")}</button><section><SectionTitle title={t("How are you feeling?", "Comment vous sentez-vous ?")} subtitle={t("Choose a feeling for a personal prayer.", "Choisissez un ressenti pour une priere personnelle.")} /><div className="mood-grid">{MOODS.map(x => { const prayer = getMoodPrayer(x); return <button onClick={() => setMood(x)} key={x}><span className={`mood-button-icon ${prayer.tone}`}><MoodIcon name={prayer.icon} /></span>{x}</button>; })}</div></section></div>
-      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label={t("Prayers", "Prieres")} onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label={streakAtGrace ? t("Streak (grace day)", "Serie (jour de grace)") : t("Streak", "Serie")} /><Stat value={`${analytics.visitCount}`} label={t("Visits", "Visites")} /><Stat value="5" label={t("Answered", "Exaucees")} /></div><Panel><SectionTitle title={t("Today's goals", "Objectifs du jour")} subtitle={t(`${done} of ${goals.length} complete`, `${done} sur ${goals.length} termines`)} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}{showCheckIn && <DailyCheckInModal onSubmit={async (m, note) => { await submitMoodCheckIn(m, note); setShowCheckIn(false); }} onClose={() => setShowCheckIn(false)} language={user.language} />}{showVerseMoment && <VerseOfMomentModal fetchVerse={fetchRandomVerse} onClose={() => setShowVerseMoment(false)} language={user.language} />}</>;
+      <div className="side-column"><div className="stat-grid"><Stat value={`${analytics.totalPrayers}`} label={t("Prayers", "Prieres")} onClick={openPrayers} /><Stat value={`${analytics.currentStreak}`} label={streakAtGrace ? t("Streak (grace day)", "Serie (jour de grace)") : t("Streak", "Serie")} /><Stat value={`${analytics.visitCount}`} label={t("Visits", "Visites")} /><Stat value="5" label={t("Answered", "Exaucees")} /></div><Panel><SectionTitle title={t("Today's goals", "Objectifs du jour")} subtitle={t(`${done} of ${goals.length} complete`, `${done} sur ${goals.length} termines`)} />{goals.map(goal => <div className="mini-goal" key={goal.id}><span className={goal.done ? "done" : ""}>{goal.done ? "OK" : ""}</span><p>{goal.text}</p></div>)}</Panel></div></div>{mood && <MoodModal mood={mood} token={token} refresh={refresh} close={() => setMood(null)} />}{showCheckIn && <DailyCheckInModal onSubmit={async (m, note) => { await submitMoodCheckIn(m, note); setShowCheckIn(false); }} onClose={() => setShowCheckIn(false)} language={user.language} />}{showVerseMoment && <VerseOfMomentModal fetchVerse={fetchRandomVerse} onClose={() => setShowVerseMoment(false)} language={user.language} token={token} />}</>;
 }
 function isStreakAtGraceDay(analytics: Analytics): boolean {
   if (analytics.gracePeriodAvailable === false) return false;
@@ -1509,21 +1658,39 @@ function DeclarationCard({ declaration, onConfirm, language }: { declaration: De
     <button className="button ghost full declaration-confirm" disabled={confirmed || confirming} onClick={confirm}>{confirmed ? t("Declared today", "Declare aujourd'hui") : confirming ? t("Confirming...", "Confirmation...") : t("I declare this over my life", "Je declare ceci sur ma vie")}</button>
   </Panel>;
 }
-function VerseOfMomentModal({ fetchVerse, onClose, language }: { fetchVerse: () => Promise<{ verse: string; reference: string }>; onClose: () => void; language: Lang }) {
+function VerseOfMomentModal({ fetchVerse, onClose, language, token }: { fetchVerse: () => Promise<{ verse: string; reference: string }>; onClose: () => void; language: Lang; token: string }) {
   const [verse, setVerse] = useState<{ verse: string; reference: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [bgUrl, setBgUrl] = useState<string | null>(null);
+  const bgListRef = useRef<{ name: string; url: string }[]>([]);
   const t = (en: string, fr: string) => tr(language, en, fr);
+  const pickRandomBackground = () => {
+    const list = bgListRef.current;
+    if (list.length === 0) return;
+    const pick = list[Math.floor(Math.random() * list.length)];
+    setBgUrl(`${MEDIA_BASE_URL}${pick.url}`);
+  };
   const loadNext = async () => {
     if (loading) return;
     setLoading(true);
     setHasError(false);
-    try { setVerse(await fetchVerse()); }
-    catch (_e) { setVerse(current => { if (!current) setHasError(true); return current; }); }
+    try { setVerse(await fetchVerse()); setErrorDetail(null); pickRandomBackground(); }
+    catch (err) { setVerse(current => { if (!current) { setHasError(true); setErrorDetail(err instanceof Error ? err.message : String(err)); } return current; }); }
     finally { setLoading(false); }
   };
   useEffect(() => { loadNext(); }, []);
+  useEffect(() => {
+    api<{ name: string; url: string }[]>("/daily-verse/backgrounds", {}, token)
+      .then(list => {
+        bgListRef.current = list;
+        pickRandomBackground();
+      })
+      .catch(() => {});
+  }, []);
   return <div className="verse-moment-backdrop" onClick={loadNext}>
+    {bgUrl && <video key={bgUrl} className="verse-moment-bg-video" src={bgUrl} autoPlay loop muted playsInline />}
     <button className="modal-close verse-moment-close" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close">x</button>
     {loading && !verse
       ? <p className="verse-moment-loading">{t("Loading...", "Chargement...")}</p>
@@ -1531,6 +1698,7 @@ function VerseOfMomentModal({ fetchVerse, onClose, language }: { fetchVerse: () 
         ? <div className="verse-moment-content verse-moment-error">
             <p className="verse-moment-error-title">{t("Couldn't load a verse right now.", "Impossible de charger un verset pour le moment.")}</p>
             <p className="verse-moment-hint">{t("Check your connection and tap anywhere to try again.", "Verifiez votre connexion et touchez pour reessayer.")}</p>
+            {errorDetail && <p className="verse-moment-hint verse-moment-detail">{errorDetail}</p>}
           </div>
         : <div className="verse-moment-content" key={verse?.reference}>
             <q>{verse?.verse}</q>
@@ -1570,7 +1738,7 @@ function GoalsScreen({ token, goals, refresh, language }: { token:string; goals:
     <p className="growth-section-title">{t("Structured Growth", "Croissance structuree")}</p>
     <div className="growth-tile-list">
       <button className="growth-tile" onClick={() => setShowChallenges(true)}><span className="tile-icon coral">{"\u{1F3C6}"}</span><div><b>{t("Prayer Challenges", "Defis de priere")}</b><p>{t("Join a multi-day prayer challenge.", "Rejoignez un defi de priere sur plusieurs jours.")}</p></div></button>
-      <button className="growth-tile" onClick={() => setShowFasting(true)}><span className="tile-icon green">{"\u{1F37D}"}</span><div><b>{t("Fasting Tracker", "Suivi de jeune")}</b><p>{t("Start a fast and track your progress.", "Commencez un jeune et suivez votre progression.")}</p></div></button>
+      <button className="growth-tile" onClick={() => window.alert(t("Fasting Tracker is coming soon! We're still polishing this one.", "Le suivi de jeune arrive bientot ! Nous peaufinons encore cette fonctionnalite."))}><span className="tile-icon green">{"\u{1F37D}"}</span><div><b>{t("Fasting Tracker", "Suivi de jeune")}</b><p>{t("Coming soon.", "Bientot disponible.")}</p></div><span className="growth-badge">{t("Soon", "Bientot")}</span></button>
       <button className="growth-tile" onClick={() => setShowReadingPlans(true)}><span className="tile-icon sky">{"\u{1F4D6}"}</span><div><b>{t("Bible Reading Plan", "Plan de lecture biblique")}</b><p>{t("Follow a guided plan through Scripture.", "Suivez un plan guide a travers l'Ecriture.")}</p></div></button>
       <button className="growth-tile" onClick={() => setShowMemoryCards(true)}><span className="tile-icon emerald">{"\u{1F0CF}"}</span><div><b>{t("Scripture Memory Cards", "Cartes memoire bibliques")}</b><p>{t("Flashcard your way to memorizing verses.", "Memorisez des versets avec des cartes.")}</p></div></button>
     </div>
@@ -1774,7 +1942,7 @@ function ReadingPlansModal({ token, language, onClose }: { token: string; langua
       <button className="modal-close" onClick={onClose} aria-label="Close">x</button>
       <p className="eyebrow">{t("Structured Growth", "Croissance structuree")}</p>
       <h2>{t("Bible Reading Plans", "Plans de lecture biblique")}</h2>
-      {loading ? <p>{t("Loading...", "Chargement...")}</p> : <div className="growth-card-list">
+      {loading ? <p>{t("Loading...", "Chargement...")}</p> : plans.length === 0 ? <p className="empty-note">{t("No reading plans available right now — check back soon.", "Aucun plan de lecture disponible pour le moment — revenez bientot.")}</p> : <div className="growth-card-list">
         {plans.map(plan => {
           const progress = plan.duration_days ? Math.min(1, plan.days_completed / plan.duration_days) : 0;
           const currentDay = Array.isArray(plan.days) ? plan.days[plan.days_completed] : null;
@@ -1945,7 +2113,7 @@ function MemoryCardsModal({ token, language, onClose }: { token: string; languag
       <p className="eyebrow">{t("Structured Growth", "Croissance structuree")}</p>
       <h2>{t("Scripture Memory Cards", "Cartes memoire bibliques")}</h2>
       <p>{t("Add a verse, flip the card to review it, then in 7 days write it from memory to master it.", "Ajoutez un verset, retournez la carte, puis ecrivez-le de memoire apres 7 jours.")}</p>
-      {loading ? <p>{t("Loading...", "Chargement...")}</p> : <div className="growth-card-list">
+      {loading ? <p>{t("Loading...", "Chargement...")}</p> : cards.length === 0 ? <p className="empty-note">{t("No memory cards available right now — check back soon.", "Aucune carte memoire disponible pour le moment — revenez bientot.")}</p> : <div className="growth-card-list">
         {cards.map(card => {
           const busy = busyId === card.id;
           if (!card.added) {
@@ -2022,11 +2190,13 @@ function WellnessScreen({ token, onNavigate, user }: { token: string; onNavigate
 function BreathingExerciseModal({ onClose }: { onClose: () => void }) {
   const phases = [{ id: "inhale", label: "Breathe in...", seconds: 4 }, { id: "hold", label: "Hold...", seconds: 7 }, { id: "exhale", label: "Breathe out...", seconds: 8 }] as const;
   const prayers = ["Lord, breathe Your peace into me.", "I release my worry into Your hands.", "You are near to me in this moment.", "Fill me with Your calm and quiet strength.", "I trust You with what I cannot control."];
+  const [started, setStarted] = useState(false);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [cycles, setCycles] = useState(0);
   const phase = phases[phaseIndex];
 
   useEffect(() => {
+    if (!started) return;
     const timer = window.setTimeout(() => {
       if (phaseIndex === phases.length - 1) {
         setCycles(c => c + 1);
@@ -2036,7 +2206,19 @@ function BreathingExerciseModal({ onClose }: { onClose: () => void }) {
       }
     }, phase.seconds * 1000);
     return () => window.clearTimeout(timer);
-  }, [phaseIndex]);
+  }, [phaseIndex, started]);
+
+  if (!started) {
+    return <div className="breathing-modal-backdrop" onClick={onClose}>
+      <button className="modal-close breathing-close" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close">x</button>
+      <div className="breathing-intro" onClick={e => e.stopPropagation()}>
+        <p className="breathing-title">4-7-8 Breathing</p>
+        <p className="breathing-intro-text">We're here to help you find calm and peace within your heart and soul. This simple rhythm — breathe in for 4 seconds, hold for 7, breathe out for 8 — gives your body a moment to settle, while short prayers guide your thoughts back to God.</p>
+        <p className="breathing-intro-text">Find a quiet spot, get comfortable, and when you're ready, we'll begin together.</p>
+        <button className="button primary full" onClick={() => setStarted(true)}>Begin</button>
+      </div>
+    </div>;
+  }
 
   return <div className="breathing-modal-backdrop" onClick={onClose}>
     <button className="modal-close breathing-close" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close">x</button>
@@ -3077,7 +3259,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setDeleting(false);
     }
   };
-  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</h3><p>{user.hasPassword ? t("Update the password for this account.", "Mettez a jour le mot de passe de ce compte.") : t("Add a password so you can also sign in with email, not just Google.", "Ajoutez un mot de passe pour aussi vous connecter par e-mail.")}</p><button className="button secondary full" onClick={() => setShowPassword(true)}>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</button></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel><Panel><h3>{t("Appearance", "Apparence")}</h3><p>{t(`${fontFamily} · ${Math.round(fontScale * 100)}% text size`, `${fontFamily} · ${Math.round(fontScale * 100)}% taille du texte`)}</p><button className="button secondary full" onClick={() => setShowAppearance(true)}>{t("Change Font & Size", "Changer la police et la taille")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}{showAppearance && <AppearanceModal fontFamily={fontFamily} fontScale={fontScale} saving={savingSettings} onSelectFont={(value) => saveProfile({ fontFamily: value })} onSelectScale={(value) => saveProfile({ fontScale: value })} onClose={() => setShowAppearance(false)} language={language} />}{showPassword && <PasswordModal token={token} language={language} hasPassword={!!user.hasPassword} onDone={() => setShowPassword(false)} />}</>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</h3><p>{user.hasPassword ? t("Update the password for this account.", "Mettez a jour le mot de passe de ce compte.") : t("Add a password so you can also sign in with email, not just Google.", "Ajoutez un mot de passe pour aussi vous connecter par e-mail.")}</p><button className="button secondary full" onClick={() => setShowPassword(true)}>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</button></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /><button className="button secondary full" onClick={() => (window as any)._iub?.cs?.api?.openPreferences?.()}>{t("Cookie Preferences", "Preferences de cookies")}</button></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel><Panel><h3>{t("Appearance", "Apparence")}</h3><p>{t(`${fontFamily} · ${Math.round(fontScale * 100)}% text size`, `${fontFamily} · ${Math.round(fontScale * 100)}% taille du texte`)}</p><button className="button secondary full" onClick={() => setShowAppearance(true)}>{t("Change Font & Size", "Changer la police et la taille")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}{showAppearance && <AppearanceModal fontFamily={fontFamily} fontScale={fontScale} saving={savingSettings} onSelectFont={(value) => saveProfile({ fontFamily: value })} onSelectScale={(value) => saveProfile({ fontScale: value })} onClose={() => setShowAppearance(false)} language={language} />}{showPassword && <PasswordModal token={token} language={language} hasPassword={!!user.hasPassword} onDone={() => setShowPassword(false)} />}</>;
 }
 
 function MilestonesModal({ token, language, onClose }: { token: string; language: Lang; onClose: () => void }) {
