@@ -3,7 +3,7 @@ import * as React from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 type Lang = "en" | "fr";
-type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "ai" | "community" | "profile" | "support" | "notifications" | "admin";
+type AppTab = "home" | "prayers" | "journal" | "goals" | "wellness" | "bible" | "ai" | "community" | "profile" | "support" | "notifications" | "admin";
 type User = {
   fullName: string;
   email: string;
@@ -429,6 +429,195 @@ function storedLang(): Lang {
   }
 }
 
+
+// ─── Bible reading ─────────────────────────────────────────────────────────
+// Free and open. No auth header, no plan check — the KJV is public domain and
+// the backend serves it to anyone.
+
+type BibleBook = { name: string; order: number; chapters: number; testament: string };
+type BibleTranslation = { code: string; name: string; year: number; note: string; available: boolean };
+
+function BibleScreen({ language }: { language: Lang }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+
+  const [books, setBooks] = useState<BibleBook[]>([]);
+  const [translations, setTranslations] = useState<BibleTranslation[]>([]);
+  const [translation, setTranslation] = useState("KJV");
+  const [book, setBook] = useState("John");
+  const [chapter, setChapter] = useState(3);
+  const [verses, setVerses] = useState<{ verse: number; text: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerBook, setPickerBook] = useState<BibleBook | null>(null);
+
+  useEffect(() => {
+    api<{ books: BibleBook[] }>("/bible/books").then(d => setBooks(d.books)).catch(() => {});
+    api<{ translations: BibleTranslation[] }>("/bible/translations")
+      .then(d => setTranslations(d.translations))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api<any>(`/bible/${translation}/${encodeURIComponent(book)}/${chapter}`)
+      .then(d => { if (!cancelled) { setVerses(d.verses); setLoading(false); } })
+      .catch(err => {
+        if (cancelled) return;
+        setVerses([]);
+        setError(err instanceof Error ? err.message : t("Couldn't load this chapter.", "Impossible de charger ce chapitre."));
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [translation, book, chapter]);
+
+  const current = books.find(b => b.name === book);
+  const available = translations.filter(x => x.available);
+  const comingSoon = translations.filter(x => !x.available);
+
+  const go = (b: string, c: number) => {
+    setBook(b);
+    setChapter(c);
+    setShowPicker(false);
+    setPickerBook(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  return <>
+    <PageIntro
+      title={t("Bible", "Bible")}
+      subtitle={t("Read freely. The whole Bible, always open to you.", "Lisez librement. Toute la Bible, toujours ouverte.")}
+    />
+
+    <div className="bible-bar">
+      <button className="button secondary bible-picker-btn" onClick={() => setShowPicker(true)}>
+        {book} {chapter} <span className="bible-caret">▾</span>
+      </button>
+
+      <select
+        className="bible-translation"
+        value={translation}
+        onChange={e => setTranslation(e.target.value)}
+      >
+        {available.map(x => <option key={x.code} value={x.code}>{x.code} — {x.name}</option>)}
+        {comingSoon.length > 0 && (
+          <optgroup label={t("Coming soon", "Bientot disponible")}>
+            {comingSoon.map(x => (
+              <option key={x.code} value={x.code} disabled>{x.code} — {x.name} ({t("coming soon", "bientot")})</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </div>
+
+    <Panel className="bible-reader">
+      {loading ? (
+        <p className="bible-loading">{t("Loading...", "Chargement...")}</p>
+      ) : error ? (
+        <div className="bible-empty">
+          <p>{error}</p>
+          {translation !== "KJV" && (
+            <button className="button secondary" onClick={() => setTranslation("KJV")}>
+              {t("Read the KJV instead", "Lire la KJV a la place")}
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <h2 className="bible-heading">{book} {chapter}</h2>
+          <div className="bible-text">
+            {verses.map(v => (
+              <p className="bible-verse" key={v.verse}>
+                <sup className="bible-num">{v.verse}</sup>{v.text}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
+    </Panel>
+
+    {!loading && !error && current && (
+      <div className="bible-nav">
+        <button
+          className="button secondary"
+          disabled={chapter <= 1 && current.order === 1}
+          onClick={() => {
+            if (chapter > 1) return go(book, chapter - 1);
+            const prev = books.find(b => b.order === current.order - 1);
+            if (prev) go(prev.name, prev.chapters);
+          }}
+        >
+          ← {t("Previous", "Precedent")}
+        </button>
+        <span className="bible-progress">{chapter} / {current.chapters}</span>
+        <button
+          className="button secondary"
+          disabled={chapter >= current.chapters && current.order === 66}
+          onClick={() => {
+            if (chapter < current.chapters) return go(book, chapter + 1);
+            const next = books.find(b => b.order === current.order + 1);
+            if (next) go(next.name, 1);
+          }}
+        >
+          {t("Next", "Suivant")} →
+        </button>
+      </div>
+    )}
+
+    {showPicker && (
+      <div className="modal-backdrop" onClick={() => { setShowPicker(false); setPickerBook(null); }}>
+        <section className="mood-modal bible-picker" onClick={e => e.stopPropagation()}>
+          <button className="modal-close" onClick={() => { setShowPicker(false); setPickerBook(null); }}>x</button>
+
+          {!pickerBook ? (
+            <>
+              <h2>{t("Choose a book", "Choisissez un livre")}</h2>
+              {["Old Testament", "New Testament"].map(testament => (
+                <div key={testament}>
+                  <p className="eyebrow bible-testament">
+                    {testament === "Old Testament" ? t("Old Testament", "Ancien Testament") : t("New Testament", "Nouveau Testament")}
+                  </p>
+                  <div className="bible-book-grid">
+                    {books.filter(b => b.testament === testament).map(b => (
+                      <button
+                        key={b.name}
+                        className={`bible-book ${b.name === book ? "on" : ""}`.trim()}
+                        onClick={() => (b.chapters === 1 ? go(b.name, 1) : setPickerBook(b))}
+                      >
+                        {b.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <button className="button ghost bible-back" onClick={() => setPickerBook(null)}>
+                ← {t("All books", "Tous les livres")}
+              </button>
+              <h2>{pickerBook.name}</h2>
+              <div className="bible-chapter-grid">
+                {Array.from({ length: pickerBook.chapters }, (_, i) => i + 1).map(c => (
+                  <button
+                    key={c}
+                    className={`bible-chapter ${pickerBook.name === book && c === chapter ? "on" : ""}`.trim()}
+                    onClick={() => go(pickerBook.name, c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    )}
+  </>;
+}
+
 function navItemsFor(language: Lang, includeAdmin = false) {
   const items: { id: AppTab; label: string; icon: React.ReactNode }[] = [
     { id: "home", label: tr(language, "Home", "Accueil"), icon: <UiIcon name="home" /> },
@@ -436,13 +625,13 @@ function navItemsFor(language: Lang, includeAdmin = false) {
     { id: "journal", label: tr(language, "Journal", "Journal"), icon: <UiIcon name="journal" /> },
     { id: "goals", label: tr(language, "Goals", "Objectifs"), icon: <UiIcon name="goals" /> },
     { id: "wellness", label: tr(language, "Wellness", "Bien-etre"), icon: <UiIcon name="wellness" /> },
-    { id: "ai", label: tr(language, "AI Companion", "Assistant IA"), icon: <UiIcon name="ai" /> },
+    { id: "bible", label: tr(language, "Bible", "Bible"), icon: <UiIcon name="bible" /> },
     { id: "profile", label: tr(language, "Profile", "Profil"), icon: <UiIcon name="profile" /> },
   ];
   return includeAdmin ? [...items, { id: "admin" as const, label: tr(language, "Admin", "Admin"), icon: <UiIcon name="admin" /> }] : items;
 }
 
-type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "ai" | "profile" | "support" | "notification" | "admin" | "community";
+type UiIconName = "home" | "pray" | "journal" | "goals" | "wellness" | "bible" | "ai" | "profile" | "support" | "notification" | "admin" | "community";
 
 function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
   const paths: Record<UiIconName, string[]> = {
@@ -452,6 +641,7 @@ function UiIcon({ name, size = 16 }: { name: UiIconName; size?: number }) {
     goals: ["M6 21V4", "M6 4h11l-2 4 2 4H6"],
     wellness: ["M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z", "M8 13h2l1-2 2 4 1-2h2"],
     ai: ["M12 3l1.4 4.2L18 8.6l-4.2 1.4L12 15l-1.8-5L6 8.6l4.6-1.4L12 3Z", "M5 16l.7 2.1L8 19l-2.3.9L5 22l-.7-2.1L2 19l2.3-.9L5 16Z"],
+    bible: ["M12 6.5C10.5 5 8.5 4.3 4 4.3V19c4.5 0 6.5.7 8 2.2 1.5-1.5 3.5-2.2 8-2.2V4.3c-4.5 0-6.5.7-8 2.2Z", "M12 6.5v14.7", "M9.2 10.2h-2.4", "M17.2 10.2h-2.4"],
     profile: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
     support: ["M21 12.5a8.5 8.5 0 0 1-8.5 8.5 9.3 9.3 0 0 1-3.5-.7L3 21l.8-5.6A8.5 8.5 0 1 1 21 12.5Z", "M8.5 12h.01", "M12 12h.01", "M15.5 12h.01", "M9 16h5"],
     notification: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9", "M10 21h4"],
@@ -491,7 +681,7 @@ const NAV_ITEMS: { id: AppTab; label: string; icon: React.ReactNode }[] = [
   { id: "journal", label: "Journal", icon: <UiIcon name="journal" /> },
   { id: "goals", label: "Goals", icon: <UiIcon name="goals" /> },
   { id: "wellness", label: "Wellness", icon: <UiIcon name="wellness" /> },
-  { id: "ai", label: "AI Companion", icon: <UiIcon name="ai" /> },
+  { id: "bible", label: "Bible", icon: <UiIcon name="bible" /> },
   { id: "community", label: "Community", icon: <UiIcon name="community" /> },
   { id: "profile", label: "Profile", icon: <UiIcon name="profile" /> },
 ];
@@ -1701,6 +1891,7 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
           {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} prayers={prayers} markPrayerAnswered={markPrayerAnswered} />}
           {tab === "goals" && <GoalsScreen token={token} goals={goals} refresh={refresh} language={language} />}
           {tab === "wellness" && <WellnessScreen token={token} onNavigate={setTab} user={user} />}
+          {tab === "bible" && <BibleScreen language={language} />}
           {tab === "ai" && <AiScreen user={user} token={token} monetization={monetization} refreshMonetization={loadMonetization} />}
           {tab === "community" && <CommunityScreen token={token} user={user} />}
           {tab === "support" && <CustomerCareScreen user={user} token={token} onTicketSent={loadNotifications} />}
@@ -1708,7 +1899,11 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
           {tab === "profile" && <ProfileScreen user={user} token={token} language={language} setLanguage={setLanguage} updateUser={updateUser} signOut={signOut} onDeleted={() => { updateUser(null); signOut(); }} openAdmin={user.isAdmin ? () => setTab("admin") : undefined} monetization={monetization} />}
           {tab === "admin" && user.isAdmin && <AdminControlCenter token={token} />}
         </div>
-    </div><nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
+    </div>
+    {/* AI has moved out of the nav (Bible took its place) — it now lives as a
+        floating button above the dock, so it's still one tap away. */}
+    {tab !== "ai" && <button className="ai-fab" onClick={() => setTab("ai")} aria-label={tr(language, "Ask AI Companion", "Demander a l assistant IA")} title={tr(language, "Ask AI Companion", "Demander a l assistant IA")}><UiIcon name="ai" size={22} /></button>}
+    <nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
 }
 
 function NavButton({ item, active, onClick }: { item: { label: string; icon: React.ReactNode }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }
@@ -3905,7 +4100,62 @@ function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:stri
 function PrayerResourceSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return <section className="prayer-resource-section"><header><span>{icon}</span><h3>{title}</h3></header>{children}</section>;
 }
-function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){const[seconds,setSeconds]=useState(0);const required=goal.durationSeconds||10;useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);return <div className="modal-backdrop" onClick={close}><section className="mood-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>x</button><p className="eyebrow">{goal.kind||"Daily goal"}</p><h2>{goal.text}</h2><p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p><p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p><button disabled={seconds<required} className="button primary full" onClick={async()=>{await api(`/goals/${goal.id}/complete`,{method:"POST",body:JSON.stringify({elapsed_seconds:seconds})},token);await refresh();close()}}>Complete goal</button></section></div>}
+function GoalModal({goal,token,refresh,close}:{goal:Goal;token:string;refresh:()=>Promise<void>;close:()=>void}){
+  const [seconds,setSeconds]=useState(0);
+  const [note,setNote]=useState("");
+  const [saving,setSaving]=useState(false);
+  const required=goal.durationSeconds||10;
+
+  // Goals that ask you to *write* something get a real place to write it.
+  // Anything reflective (gratitude notes, journalling prompts) qualifies.
+  const wantsWriting = goal.kind === "reflection"
+    || /write|journal|note|gratitude|reflect/i.test(goal.text || "");
+  const noteReady = !wantsWriting || note.trim().length > 0;
+
+  useEffect(()=>{const timer=window.setInterval(()=>setSeconds(value=>value+1),1000);return()=>clearInterval(timer)},[]);
+
+  const complete = async () => {
+    setSaving(true);
+    try{
+      await api(`/goals/${goal.id}/complete`,{
+        method:"POST",
+        body:JSON.stringify({ elapsed_seconds: seconds, note: note.trim() || undefined }),
+      },token);
+      await refresh();
+      close();
+    } finally { setSaving(false); }
+  };
+
+  return <div className="modal-backdrop" onClick={close}>
+    <section className="mood-modal" onClick={e=>e.stopPropagation()}>
+      <button className="modal-close" onClick={close}>x</button>
+      <p className="eyebrow">{goal.kind||"Daily goal"}</p>
+      <h2>{goal.text}</h2>
+      <p>{goal.content||"Take a quiet moment to complete this activity faithfully."}</p>
+
+      {wantsWriting && <div className="goal-note">
+        <label className="goal-note-label" htmlFor={`goal-note-${goal.id}`}>Write it here</label>
+        <textarea
+          id={`goal-note-${goal.id}`}
+          className="goal-note-input"
+          value={note}
+          onChange={e=>setNote(e.target.value)}
+          rows={4}
+          placeholder="Today I'm grateful for..."
+          autoFocus
+        />
+        <p className="goal-note-hint">{note.trim() ? "Saved with this goal." : "Write something before completing this one."}</p>
+      </div>}
+
+      <p className="timer-copy">{seconds>=required?"Ready to mark complete.":`Stay here for ${required-seconds} more seconds.`}</p>
+      <button
+        disabled={seconds<required || !noteReady || saving}
+        className="button primary full"
+        onClick={complete}
+      >{saving ? "Saving..." : "Complete goal"}</button>
+    </section>
+  </div>;
+}
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <label className="field"><span>{label}</span><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} /></label>; }
 function initials(name?: string) {
   const parts = (name || "Friend").trim().split(/\s+/).filter(Boolean);
