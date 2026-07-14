@@ -79,9 +79,9 @@ type MonetizationStatus = {
     bannerEnabled?: boolean;
     aiUnlockEnabled?: boolean;
     banner?: { titleEn?: string; titleFr?: string; bodyEn?: string; bodyFr?: string; ctaEn?: string; ctaFr?: string };
-    aiGate?: { titleEn?: string; titleFr?: string; bodyEn?: string; bodyFr?: string; ctaEn?: string; ctaFr?: string };
   };
-  ai?: { maxDailyUses?: number; usedToday?: number; remainingToday?: number; requiresAdUnlock?: boolean };
+  trial?: { active?: boolean; daysLeft?: number; endsAt?: string };
+  ai?: { unlimited?: boolean; monthlyAllowance?: number; usedThisMonth?: number; remainingThisMonth?: number | null; resetsAt?: string };
 };
 
 class ApiError extends Error {
@@ -122,8 +122,149 @@ function startIntroVideoPreload() {
     .catch(() => { introVideoCache.failed = true; });
 }
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-const IUBENDA_PRIVACY_URL = "https://www.iubenda.com/privacy-policy/60287717";
-const IUBENDA_COOKIE_URL = "https://www.iubenda.com/privacy-policy/60287717/cookie-policy";
+// ─── Cookie consent ────────────────────────────────────────────────────────
+// Self-contained consent handling. Nothing optional is stored or activated
+// until the person actively chooses it, and the choice is remembered so we
+// don't nag them on every visit.
+
+const COOKIE_CONSENT_KEY = "rs_cookie_consent_v1";
+const OPEN_COOKIE_PREFS_EVENT = "rs:open-cookie-preferences";
+
+type CookieConsent = {
+  necessary: true;      // always on — the app cannot run without these
+  preferences: boolean;
+  analytics: boolean;
+  decidedAt: string;
+};
+
+function readCookieConsent(): CookieConsent | null {
+  try {
+    const raw = window.localStorage.getItem(COOKIE_CONSENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return {
+      necessary: true,
+      preferences: !!parsed.preferences,
+      analytics: !!parsed.analytics,
+      decidedAt: String(parsed.decidedAt || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCookieConsent(consent: { preferences: boolean; analytics: boolean }) {
+  try {
+    const payload: CookieConsent = {
+      necessary: true,
+      preferences: consent.preferences,
+      analytics: consent.analytics,
+      decidedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(payload));
+    // If someone withdraws consent for a category, actively clear anything we
+    // stored under it — consent withdrawn has to mean the data actually goes.
+    if (!consent.preferences) {
+      window.localStorage.removeItem("rs_pref_font");
+      window.localStorage.removeItem("rs_pref_font_scale");
+    }
+  } catch {
+    // Storage blocked (private mode / cookies disabled). The app still works;
+    // we'll simply ask again next visit.
+  }
+}
+
+/** Opens the cookie preferences modal from anywhere (e.g. the Profile page). */
+function openCookiePreferences() {
+  window.dispatchEvent(new Event(OPEN_COOKIE_PREFS_EVENT));
+}
+
+function CookieConsentManager({ language }: { language: Lang }) {
+  const t = (en: string, fr: string) => tr(language, en, fr);
+  const [consent, setConsent] = useState<CookieConsent | null>(() => readCookieConsent());
+  const [showPrefs, setShowPrefs] = useState(false);
+  const [prefsDraft, setPrefsDraft] = useState({ preferences: true, analytics: true });
+
+  // Let any part of the app reopen this (Profile → Cookie Preferences).
+  useEffect(() => {
+    const handler = () => {
+      const current = readCookieConsent();
+      setPrefsDraft({
+        preferences: current?.preferences ?? true,
+        analytics: current?.analytics ?? true,
+      });
+      setShowPrefs(true);
+    };
+    window.addEventListener(OPEN_COOKIE_PREFS_EVENT, handler);
+    return () => window.removeEventListener(OPEN_COOKIE_PREFS_EVENT, handler);
+  }, []);
+
+  const decide = (next: { preferences: boolean; analytics: boolean }) => {
+    writeCookieConsent(next);
+    setConsent(readCookieConsent());
+    setShowPrefs(false);
+  };
+
+  // Already decided and not actively editing → show nothing.
+  if (consent && !showPrefs) return null;
+
+  if (showPrefs) {
+    return <div className="cookie-modal-backdrop" onClick={() => setShowPrefs(false)}>
+      <div className="cookie-modal" onClick={e => e.stopPropagation()}>
+        <h2>{t("Cookie Preferences", "Preferences de cookies")}</h2>
+        <p className="cookie-modal-intro">{t("Choose what you're comfortable with. You can change this at any time from Profile → Privacy.", "Choisissez ce qui vous convient. Vous pouvez modifier ceci a tout moment depuis Profil → Confidentialite.")}</p>
+
+        <div className="cookie-row cookie-row-locked">
+          <div>
+            <b>{t("Strictly necessary", "Strictement necessaires")}</b>
+            <p>{t("Keeps you signed in and keeps your account secure. These cannot be turned off — the app can't work without them.", "Vous garde connecte et securise votre compte. Ceux-ci ne peuvent pas etre desactives.")}</p>
+          </div>
+          <span className="cookie-always-on">{t("Always on", "Toujours actif")}</span>
+        </div>
+
+        <label className="cookie-row">
+          <div>
+            <b>{t("Preferences", "Preferences")}</b>
+            <p>{t("Remembers your font, text size, language and Bible version on this device.", "Memorise votre police, taille de texte, langue et version biblique sur cet appareil.")}</p>
+          </div>
+          <input type="checkbox" checked={prefsDraft.preferences} onChange={e => setPrefsDraft(d => ({ ...d, preferences: e.target.checked }))} />
+        </label>
+
+        <label className="cookie-row">
+          <div>
+            <b>{t("Analytics", "Statistiques")}</b>
+            <p>{t("Aggregate usage only, so we can improve the app. Never linked to your prayers, journals or AI conversations.", "Usage agrege uniquement. Jamais lie a vos prieres, journaux ou conversations IA.")}</p>
+          </div>
+          <input type="checkbox" checked={prefsDraft.analytics} onChange={e => setPrefsDraft(d => ({ ...d, analytics: e.target.checked }))} />
+        </label>
+
+        <div className="cookie-actions">
+          <button className="button secondary" onClick={() => decide({ preferences: false, analytics: false })}>{t("Reject non-essential", "Refuser le non-essentiel")}</button>
+          <button className="button primary" onClick={() => decide(prefsDraft)}>{t("Save choices", "Enregistrer")}</button>
+        </div>
+      </div>
+    </div>;
+  }
+
+  return <div className="cookie-banner" role="dialog" aria-label={t("Cookie notice", "Avis sur les cookies")}>
+    <div className="cookie-banner-text">
+      <b>{t("We keep cookies to a minimum.", "Nous limitons les cookies au minimum.")}</b>
+      <p>{t("We use essential cookies to keep you signed in. Optional ones stay off unless you allow them. We never use advertising cookies, and we never sell your data.", "Nous utilisons des cookies essentiels pour vous garder connecte. Les cookies optionnels restent desactives sauf autorisation. Jamais de publicite, jamais de revente de vos donnees.")}</p>
+    </div>
+    <div className="cookie-banner-actions">
+      <button className="button ghost" onClick={() => { setPrefsDraft({ preferences: true, analytics: true }); setShowPrefs(true); }}>{t("Manage", "Gerer")}</button>
+      <button className="button secondary" onClick={() => decide({ preferences: false, analytics: false })}>{t("Reject non-essential", "Refuser")}</button>
+      <button className="button primary" onClick={() => decide({ preferences: true, analytics: true })}>{t("Accept all", "Tout accepter")}</button>
+    </div>
+  </div>;
+}
+
+// Point these at wherever you host PRIVACY_POLICY.md and COOKIE_POLICY.md.
+// They currently still point at the old Iubenda-hosted pages — update them
+// once your own policy pages are live.
+const PRIVACY_POLICY_URL = "https://www.iubenda.com/privacy-policy/60287717";
+const COOKIE_POLICY_URL = "https://www.iubenda.com/privacy-policy/60287717/cookie-policy";
 const ROTATING_QUOTES = [
   { verse: "Trust in the Lord with all your heart.", reference: "Proverbs 3:5" },
   { verse: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
@@ -651,6 +792,7 @@ export default function App() {
   }, [activeUser?.fontFamily, activeUser?.fontScale]);
   return (
     <AppErrorBoundary>
+    <CookieConsentManager language={language ?? "en"} />
     <Routes>
       <Route path="/" element={<Navigate to="/splash" replace />} />
       <Route path="/splash" element={<SplashPage nextPath={setupPath} />} />
@@ -689,7 +831,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
 }
 
 function LegalLinks({ language, compact = false }: { language: Lang; compact?: boolean }) {
-  return <div className={`legal-links ${compact ? "compact" : ""}`.trim()}><a href={IUBENDA_PRIVACY_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Privacy Policy">{tr(language, "Privacy Policy", "Politique de confidentialite")}</a><a href={IUBENDA_COOKIE_URL} className="iubenda-white iubenda-noiframe iubenda-embed" title="Cookie Policy">{tr(language, "Cookie Policy", "Politique relative aux cookies")}</a></div>;
+  return <div className={`legal-links ${compact ? "compact" : ""}`.trim()}><a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" title="Privacy Policy">{tr(language, "Privacy Policy", "Politique de confidentialite")}</a><a href={COOKIE_POLICY_URL} target="_blank" rel="noopener noreferrer" title="Cookie Policy">{tr(language, "Cookie Policy", "Politique relative aux cookies")}</a></div>;
 }
 
 const SIGN_IN_LOADING_LINES: [string, string][] = [
@@ -1003,7 +1145,7 @@ function AuthPage({ language, onLogin }: { language: Lang; onLogin: (user: User,
   };
   if (busy) return <PublicShell><SignInLoadingScreen language={language} /></PublicShell>;
   return <PublicShell><div className="auth-card">
-    <Brand /><p className="kicker">{tr(language, "Welcome to your quiet space", "Bienvenue dans votre espace paisible")}</p><h1>{signup ? tr(language, "Create your account", "Creez votre compte") : tr(language, "Welcome back", "Bon retour")}</h1>
+    <Brand /><p className="kicker">{tr(language, "Everything for your daily walk, in one place", "Tout pour votre marche quotidienne, en un seul endroit")}</p><h1>{signup ? tr(language, "Create your account", "Creez votre compte") : tr(language, "Welcome back", "Bon retour")}</h1>
     <p className="lead">{signup ? tr(language, "Start a daily rhythm shaped around your faith.", "Commencez un rythme quotidien faconne autour de votre foi.") : tr(language, "Continue your prayer and reflection journey.", "Poursuivez votre parcours de priere et de reflection.")}</p>
     <div className="segmented"><button className={!signup ? "active" : ""} onClick={() => setSignup(false)}>{tr(language, "Sign in", "Se connecter")}</button><button className={signup ? "active" : ""} onClick={() => setSignup(true)}>{tr(language, "Sign up", "S'inscrire")}</button></div>
     <form onSubmit={submit} className="form-stack">
@@ -1177,7 +1319,14 @@ function IntroVideoPage() {
             className="intro-video-el"
             autoPlay
             playsInline
+            controls
+            preload="auto"
             onEnded={finish}
+            // If the file is missing (404) or won't decode, don't leave the
+            // user staring at a black rectangle — show the failure state so
+            // the Continue button appears.
+            onError={() => setFailed(true)}
+            onCanPlay={(e) => { (e.currentTarget as HTMLVideoElement).play().catch(() => {}); }}
           />}
     </div>
     <button className="intro-video-skip" onClick={finish}>{failed ? "Continue" : "Skip"}</button>
@@ -1426,7 +1575,6 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
   const [showReminderPermission, setShowReminderPermission] = useState(() => !localStorage.getItem("rs_background_reminders_choice"));
   const t = (en: string, fr: string) => tr(language, en, fr);
   const isPremiumUser = !!user.isAdmin || user.plan === "premium";
-  const showAds = !!monetization && !isPremiumUser && monetization?.ads?.enabled !== false && monetization?.ads?.bannerEnabled !== false;
   const unreadNotifications = notifications.filter(item => !item.readAt).length;
   const surfaceUnreadNotification = (items: AppNotification[]) => {
     const latest = items.find(item => !item.readAt);
@@ -1548,7 +1696,6 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
     <div className="workspace"><header className="app-header"><div><p className="eyebrow">{new Date().toLocaleDateString(language === "fr" ? "fr-FR" : "en-US", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{title}</h1></div><div className="header-actions"><button className={`support-button notification-button ${tab === "notifications" ? "active" : ""}`.trim()} onClick={() => { if ("Notification" in window && window.Notification.permission === "default") void window.Notification.requestPermission(); setTab("notifications"); }} title={t("Open notifications", "Ouvrir les notifications")} aria-label={t("Open notifications", "Ouvrir les notifications")}><UiIcon name="notification" size={19} />{unreadNotifications > 0 && <i>{unreadNotifications}</i>}<span>{t("Alerts", "Alertes")}</span></button><button className={`support-button ${tab === "support" ? "active" : ""}`.trim()} onClick={() => setTab("support")} title={t("Open customer care", "Ouvrir le service client")} aria-label={t("Open customer care", "Ouvrir le service client")}><UiIcon name="support" size={19} /><span>{t("Care", "Aide")}</span></button><button className="avatar-button" onClick={() => setTab("profile")} title={t("Open profile", "Ouvrir le profil")}><UserAvatar user={user} className="header-avatar" /></button></div></header>
         {notificationToast && <button className="notification-toast" onClick={() => { setTab("notifications"); setNotificationToast(null); }}><span className="notification-mark"><UiIcon name={notificationToast.type === "support_reply" ? "support" : "notification"} size={18} /></span><div><b>{notificationToast.title}</b><p>{notificationToast.body}</p></div></button>}
         <div className="screen-wrap">
-          {showAds && tab !== "ai" && <Panel className="ad-banner-panel"><div className="ad-banner-copy"><p className="eyebrow">{t("Sponsored", "Sponsorise")}</p><h3>{language === "fr" ? monetization?.ads?.banner?.titleFr || "Passez premium sur ReviveSpring" : monetization?.ads?.banner?.titleEn || "Upgrade to ReviveSpring Premium"}</h3><p>{language === "fr" ? monetization?.ads?.banner?.bodyFr || "Retirez les pubs et profitez d'un acces premium sans interruption." : monetization?.ads?.banner?.bodyEn || "Remove ads and enjoy uninterrupted premium access."}</p></div><button className="button secondary">{language === "fr" ? monetization?.ads?.banner?.ctaFr || "Passer premium sur Android" : monetization?.ads?.banner?.ctaEn || "Upgrade on Android"}</button></Panel>}
           {tab === "home" && <HomeScreen user={user} token={token} goals={goals} analytics={analytics} refresh={refresh} openAi={() => setTab("ai")} openPrayers={() => setTab("prayers")} moodCheckIn={moodCheckIn} submitMoodCheckIn={submitMoodCheckIn} dailyManna={dailyManna} claimDailyManna={claimDailyManna} declaration={declaration} confirmDeclaration={confirmDeclaration} fetchRandomVerse={fetchRandomVerse} growthScore={growthScore} seasonalEvents={seasonalEvents} />}
           {tab === "prayers" && <PrayerScreen items={library} token={token} refresh={refresh} openAi={() => setTab("ai")} language={language} />}
           {tab === "journal" && <JournalScreen token={token} entries={journal} setEntries={setJournal} language={language} prayers={prayers} markPrayerAnswered={markPrayerAnswered} />}
@@ -1690,7 +1837,23 @@ function VerseOfMomentModal({ fetchVerse, onClose, language, token }: { fetchVer
       .catch(() => {});
   }, []);
   return <div className="verse-moment-backdrop" onClick={loadNext}>
-    {bgUrl && <video key={bgUrl} className="verse-moment-bg-video" src={bgUrl} autoPlay loop muted playsInline />}
+    {bgUrl && <video
+      key={bgUrl}
+      className="verse-moment-bg-video"
+      src={bgUrl}
+      autoPlay
+      loop
+      muted
+      playsInline
+      preload="auto"
+      // Safari/iOS and some Chrome builds ignore the autoplay attribute until
+      // play() is called from script. Muted autoplay is always permitted, so
+      // this is safe — without it the video just sits on a black first frame.
+      ref={(el) => { if (el) { el.muted = true; el.play().catch(() => {}); } }}
+      onCanPlay={(e) => { (e.currentTarget as HTMLVideoElement).play().catch(() => {}); }}
+      // If a loop ever stalls, restart it rather than freezing on the last frame.
+      onEnded={(e) => { const v = e.currentTarget as HTMLVideoElement; v.currentTime = 0; v.play().catch(() => {}); }}
+    />}
     <button className="modal-close verse-moment-close" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close">x</button>
     {loading && !verse
       ? <p className="verse-moment-loading">{t("Loading...", "Chargement...")}</p>
@@ -2741,9 +2904,6 @@ function AiScreen({ user, token, monetization, refreshMonetization }: { user: Us
   const [typing, setTyping] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [aiStatus, setAiStatus] = useState<MonetizationStatus | null>(monetization);
-  const [rewardGateOpen, setRewardGateOpen] = useState(false);
-  const [countdown, setCountdown] = useState(5);
-  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [showScriptureSearch, setShowScriptureSearch] = useState(false);
   const [showPrayerWriter, setShowPrayerWriter] = useState(false);
   const [showCompanion, setShowCompanion] = useState(false);
@@ -2753,12 +2913,6 @@ function AiScreen({ user, token, monetization, refreshMonetization }: { user: Us
   const isPremiumUser = !!user.isAdmin || user.plan === "premium";
 
   useEffect(() => { setAiStatus(monetization); }, [monetization]);
-  useEffect(() => {
-    if (!rewardGateOpen) return;
-    setCountdown(5);
-    const timer = window.setInterval(() => setCountdown(value => value <= 1 ? 0 : value - 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [rewardGateOpen]);
 
   const loadSessions = async () => {
     try {
@@ -2833,40 +2987,30 @@ function AiScreen({ user, token, monetization, refreshMonetization }: { user: Us
   const send = async (suggestion?: string) => {
     const value = (suggestion || input).trim();
     if (!value || typing) return;
-    if (!isPremiumUser) {
-      const remaining = aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0;
-      if (remaining <= 0) {
-        setMessages(prev => [...prev, { role: "assistant", content: t("You have used all 5 free AI sessions for today. Please come back tomorrow or upgrade to Premium.", "Vous avez utilise vos 5 sessions IA gratuites pour aujourd hui. Revenez demain ou passez a Premium.") }]);
+
+    // Ads are gone. Premium (and trial) are unlimited; Standard has a monthly
+    // allowance; anyone else needs a subscription. The backend is the real
+    // gatekeeper — this is just so we can fail fast with a clear message.
+    const ai = aiStatus?.ai ?? monetization?.ai;
+    if (!isPremiumUser && ai?.unlimited !== true) {
+      const allowance = ai?.monthlyAllowance ?? 0;
+      const remaining = ai?.remainingThisMonth ?? 0;
+
+      if (allowance <= 0) {
+        setMessages(prev => [...prev, { role: "assistant", content: t("The AI Companion needs a subscription. Upgrade to send messages.", "Le compagnon IA necessite un abonnement. Passez a un forfait pour envoyer des messages.") }]);
         return;
       }
-      setQueuedMessage(value);
-      setInput("");
-      setRewardGateOpen(true);
-      return;
+      if (remaining <= 0) {
+        setMessages(prev => [...prev, { role: "assistant", content: t(`You've used all ${allowance} AI messages for this month. Your allowance resets on the 1st — or upgrade to Premium for unlimited messages.`, `Vous avez utilise vos ${allowance} messages IA de ce mois. Votre quota se reinitialise le 1er — ou passez a Premium pour des messages illimites.`) }]);
+        return;
+      }
     }
     await performSend(value);
   };
 
-  const claimAdAndContinue = async () => {
-    if (!queuedMessage) return;
-    try {
-      const unlock = await api<any>("/monetization/ai/unlock", { method: "POST", body: JSON.stringify({}) }, token);
-      setAiStatus(current => current ? { ...current, ai: { ...current.ai, ...unlock } } : current);
-      setRewardGateOpen(false);
-      const message = queuedMessage;
-      setQueuedMessage(null);
-      await performSend(message, unlock.unlockToken);
-    } catch (err) {
-      setRewardGateOpen(false);
-      setQueuedMessage(null);
-      setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : t("AI access is unavailable right now.", "L acces IA est indisponible pour le moment.") }]);
-      await refreshMonetization();
-    }
-  };
-
   return <><PageIntro title={t("AI Prayer Companion", "Assistant de priere IA")} subtitle={t("A signed-in space for prayer, Scripture, and reflection.", "Un espace connecte pour la priere, l Ecriture et la reflexion.")} />
     <div className="ai-feature-row"><button className="button secondary" onClick={() => setShowScriptureSearch(true)}>{t("Topical Scripture Search", "Recherche de versets")}</button><button className="button secondary" onClick={() => isPremiumUser ? setShowPrayerWriter(true) : setShowUpgradeNote(true)}>{isPremiumUser ? t("AI Prayer Writer", "Redacteur de prieres IA") : t("AI Prayer Writer (Premium)", "Redacteur de prieres IA (Premium)")}</button><button className="button secondary" onClick={() => isPremiumUser ? setShowCompanion(true) : setShowUpgradeNote(true)}>{isPremiumUser ? t("Spiritual Companion", "Compagnon spirituel") : t("Spiritual Companion (Premium)", "Compagnon spirituel (Premium)")}</button><button className="button secondary" onClick={() => isPremiumUser ? setShowSermon(true) : setShowUpgradeNote(true)}>{isPremiumUser ? t("Sermon Summarizer", "Resume de sermon") : t("Sermon Summarizer (Premium)", "Resume de sermon (Premium)")}</button><button className="button secondary" onClick={() => isPremiumUser ? setShowDreamJournal(true) : setShowUpgradeNote(true)}>{isPremiumUser ? t("Dream & Vision Journal", "Journal de reves") : t("Dream & Vision Journal (Premium)", "Journal de reves (Premium)")}</button></div>
-    {!isPremiumUser && <Panel className="ai-access-panel"><h3>{t("Free AI access", "Acces IA gratuit")}</h3><p>{t("Watch one short ad before each AI use. Daily limit: 5.", "Regardez une courte pub avant chaque utilisation de l IA. Limite quotidienne : 5.")}</p><b>{t(`Remaining today: ${aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0}`, `Restant aujourd hui : ${aiStatus?.ai?.remainingToday ?? monetization?.ai?.remainingToday ?? 0}`)}</b></Panel>}<div className="suggestions">{[t("Give me a prayer for anxiety", "Donne-moi une priere contre l anxiete"), t("Bible verse for strength", "Verset biblique pour la force"), t("Prayer for healing", "Priere pour la guerison"), t("How can I strengthen my faith?", "Comment puis-je fortifier ma foi ?")].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>{t("New conversation", "Nouvelle conversation")}</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || t("Conversation", "Conversation")}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">{t("Loading previous conversation...", "Chargement de la conversation precedente...")}</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">{t("Writing a thoughtful response...", "Redaction d une reponse...")}</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder={t("Ask about Bible or prayer", "Posez une question sur la Bible ou la priere")} /><button className="button primary" onClick={() => send()}>{t("Send", "Envoyer")}</button></div></Panel>{rewardGateOpen && <div className="modal-backdrop"><section className="mood-modal ai-reward-modal"><p className="eyebrow">{t("Sponsored access", "Acces sponsorise")}</p><h2>{user.language === "fr" ? monetization?.ads?.aiGate?.titleFr || "Regardez cette courte pub pour utiliser l IA" : monetization?.ads?.aiGate?.titleEn || "Watch this short ad to use AI"}</h2><p>{user.language === "fr" ? monetization?.ads?.aiGate?.bodyFr || "Les utilisateurs gratuits peuvent debloquer une conversation IA en regardant un court message sponsorise." : monetization?.ads?.aiGate?.bodyEn || "Free users can unlock one AI conversation by watching a short sponsor message."}</p><Panel className="ai-sponsor-card"><b>ReviveSpring Premium</b><p>{t("No ads. More peace. Full access.", "Pas de pubs. Plus de paix. Acces complet.")}</p></Panel><div className="permission-actions"><button className="button ghost" onClick={() => { setRewardGateOpen(false); setQueuedMessage(null); }}>{t("Cancel", "Annuler")}</button><button className="button primary" disabled={countdown > 0} onClick={claimAdAndContinue}>{countdown > 0 ? t(`Continue in ${countdown}s`, `Continuer dans ${countdown}s`) : (user.language === "fr" ? monetization?.ads?.aiGate?.ctaFr || "Continuer vers l IA" : monetization?.ads?.aiGate?.ctaEn || "Continue to AI")}</button></div></section></div>}
+    {!isPremiumUser && monetization?.ai?.unlimited !== true && <Panel className="ai-access-panel"><h3>{t("AI messages this month", "Messages IA ce mois-ci")}</h3><p>{t(`Standard includes ${monetization?.ai?.monthlyAllowance ?? 20} AI messages each month. Unused messages don\u2019t roll over.`, `Standard inclut ${monetization?.ai?.monthlyAllowance ?? 20} messages IA par mois. Les messages non utilises ne sont pas reportes.`)}</p><b>{t(`${monetization?.ai?.remainingThisMonth ?? 0} remaining`, `${monetization?.ai?.remainingThisMonth ?? 0} restants`)}</b></Panel>}<div className="suggestions">{[t("Give me a prayer for anxiety", "Donne-moi une priere contre l anxiete"), t("Bible verse for strength", "Verset biblique pour la force"), t("Prayer for healing", "Priere pour la guerison"), t("How can I strengthen my faith?", "Comment puis-je fortifier ma foi ?")].map(x => <button onClick={() => send(x)} key={x}>{x}</button>)}</div><div className="ai-history-row"><button className="button secondary" onClick={startNewConversation}>{t("New conversation", "Nouvelle conversation")}</button>{sessions.slice(0, 5).map((item, index) => <button className={`ai-session-chip ${item.sessionId === sessionId ? "active" : ""}`.trim()} key={`${item.sessionId}-${index}`} onClick={() => loadHistory(item.sessionId)} title={item.preview}>{new Date(item.updatedAt).toLocaleDateString()} - {item.preview?.slice(0, 24) || t("Conversation", "Conversation")}</button>)}</div><Panel className="chat-panel"><div className="messages">{historyLoading && <p className="typing">{t("Loading previous conversation...", "Chargement de la conversation precedente...")}</p>}{messages.map((m, i) => <p className={`message ${m.role}`} key={i}>{m.content}</p>)}{typing && <p className="typing">{t("Writing a thoughtful response...", "Redaction d une reponse...")}</p>}</div><div className="chat-compose"><textarea value={input} onChange={e => setInput(e.target.value)} placeholder={t("Ask about Bible or prayer", "Posez une question sur la Bible ou la priere")} /><button className="button primary" onClick={() => send()}>{t("Send", "Envoyer")}</button></div></Panel>
     {showScriptureSearch && <ScriptureSearchModal token={token} language={user.language} onClose={() => setShowScriptureSearch(false)} />}
     {showPrayerWriter && <AiPrayerWriterModal token={token} language={user.language} onClose={() => setShowPrayerWriter(false)} />}
     {showCompanion && <AiCompanionModal token={token} language={user.language} onClose={() => setShowCompanion(false)} />}
@@ -3259,7 +3403,7 @@ function ProfileScreen({ user, token, language, setLanguage, updateUser, signOut
       setDeleting(false);
     }
   };
-  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</h3><p>{user.hasPassword ? t("Update the password for this account.", "Mettez a jour le mot de passe de ce compte.") : t("Add a password so you can also sign in with email, not just Google.", "Ajoutez un mot de passe pour aussi vous connecter par e-mail.")}</p><button className="button secondary full" onClick={() => setShowPassword(true)}>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</button></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /><button className="button secondary full" onClick={() => (window as any)._iub?.cs?.api?.openPreferences?.()}>{t("Cookie Preferences", "Preferences de cookies")}</button></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel><Panel><h3>{t("Appearance", "Apparence")}</h3><p>{t(`${fontFamily} · ${Math.round(fontScale * 100)}% text size`, `${fontFamily} · ${Math.round(fontScale * 100)}% taille du texte`)}</p><button className="button secondary full" onClick={() => setShowAppearance(true)}>{t("Change Font & Size", "Changer la police et la taille")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}{showAppearance && <AppearanceModal fontFamily={fontFamily} fontScale={fontScale} saving={savingSettings} onSelectFont={(value) => saveProfile({ fontFamily: value })} onSelectScale={(value) => saveProfile({ fontScale: value })} onClose={() => setShowAppearance(false)} language={language} />}{showPassword && <PasswordModal token={token} language={language} hasPassword={!!user.hasPassword} onDone={() => setShowPassword(false)} />}</>;
+  return <><PageIntro title={t("My Profile", "Mon profil")} subtitle={t("Personal settings, account care, and testimony.", "Parametres personnels, gestion du compte et temoignage.")} /><div className="profile-grid"><Panel><div className="profile-hero"><UserAvatar user={user} className="profile-avatar" /><div><h2>{user.fullName}</h2><p>{(user.isAdmin ? "premium" : user.plan).toUpperCase()} {t("PLAN", "FORFAIT")}</p></div></div><div className="profile-line"><span>{t("Email", "E-mail")}</span><b>{user.email}</b></div><div className="profile-line"><span>{t("Language", "Langue")}</span><select value={selectedLanguage} disabled={savingSettings} onChange={async event => { const nextLanguage = event.target.value as Lang; setSelectedLanguage(nextLanguage); await saveProfile({ language: nextLanguage }); }}><option value="en">English</option><option value="fr">Francais</option></select></div><div className="profile-line"><span>{t("Bible Version", "Version de la Bible")}</span><select value={bibleVersion} disabled={savingSettings} onChange={async event => { const nextVersion = event.target.value; setBibleVersion(nextVersion); await saveProfile({ bibleVersion: nextVersion }); }}><option value="NIV">NIV — New International Version</option><option value="KJV">KJV — King James Version</option><option value="NLT">NLT — New Living Translation</option><option value="ESV">ESV — English Standard Version</option></select></div><div className="profile-line"><span>{t("Sign-in method", "Methode de connexion")}</span><b>{(user.authProvider || "email").toUpperCase()}</b></div></Panel><Panel><h3>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</h3><p>{user.hasPassword ? t("Update the password for this account.", "Mettez a jour le mot de passe de ce compte.") : t("Add a password so you can also sign in with email, not just Google.", "Ajoutez un mot de passe pour aussi vous connecter par e-mail.")}</p><button className="button secondary full" onClick={() => setShowPassword(true)}>{user.hasPassword ? t("Change Password", "Changer le mot de passe") : t("Create a Password", "Creer un mot de passe")}</button></Panel><Panel><h3>{t("Premium access", "Acces premium")}</h3><p>{user.isAdmin ? t("Admin accounts are automatically premium and will not see ads.", "Les comptes admin sont automatiquement premium et ne voient pas de publicites.") : user.plan === "premium" ? t("Your account is premium. Ads are removed and premium features stay unlocked.", "Votre compte est premium. Les publicites sont retirees et les fonctions premium restent debloquees.") : user.plan === "standard" ? t("Your account is Standard. Ads are removed — upgrade to Premium for unlimited AI and the full wellness library.", "Votre compte est Standard. Les publicites sont retirees — passez a Premium pour l IA illimitee et la bibliotheque bien-etre complete.") : t("Free users see app ads and must watch one short ad before each AI use. Upgrade on the Android app to remove ads.", "Les utilisateurs gratuits voient des pubs dans l application et doivent regarder une courte pub avant chaque utilisation de l IA. Passez premium sur l application Android pour retirer les pubs.")}</p>{!user.isAdmin && user.plan !== "premium" && <div className="profile-premium-note">{(monetization?.plans || []).map(plan => <p key={plan.tier}><b>{plan.tier === "premium" ? "Premium" : "Standard"}:</b> {language === "fr" ? plan.labelFr : plan.labelEn} — {t(`$${plan.firstTermPriceUsd} for the first ${plan.termMonths} months`, `${plan.firstTermPriceUsd} $ pour les premiers ${plan.termMonths} mois`)}</p>)}<p>{t("Subscriptions are currently available on the Android app.", "Les abonnements sont actuellement disponibles sur l application Android.")}</p></div>}</Panel><Panel><h3>{t("Preferences", "Preferences")}</h3><label className="switch-row"><div><b>{t("Daily prayer emails", "E-mails de priere quotidiens")}</b><p>{t("Receive a personalized prayer every day.", "Recevez chaque jour une priere personnalisee.")}</p></div><input type="checkbox" checked={emails} disabled={savingSettings} onChange={async () => { const nextValue = !emails; setEmails(nextValue); await saveProfile({ dailyEmailEnabled: nextValue }); }} /></label><label className="switch-row"><div><b>{t("Push notifications", "Notifications push")}</b><p>{t("Allow reminders and account alerts on this device.", "Autorisez les rappels et les alertes de compte sur cet appareil.")}</p></div><input type="checkbox" checked={pushEnabled} disabled={savingSettings} onChange={async () => { const nextValue = !pushEnabled; setPushEnabled(nextValue); await saveProfile({ pushNotificationsEnabled: nextValue }); }} /></label><div className="profile-actions">{openAdmin && <button className="button secondary" onClick={openAdmin}>{t("Open admin dashboard", "Ouvrir le tableau admin")}</button>}<button className="button danger" onClick={signOut}>{t("Sign out", "Se deconnecter")}</button></div></Panel><Panel><h3>{t("Privacy", "Confidentialite")}</h3><p>{t("Review ReviveSpring's Privacy Policy and Cookie Policy.", "Consultez la politique de confidentialite et la politique relative aux cookies de ReviveSpring.")}</p><LegalLinks language={language} /><button className="button secondary full" onClick={openCookiePreferences}>{t("Cookie Preferences", "Preferences de cookies")}</button></Panel><Panel><h3>{t("Delete account", "Supprimer le compte")}</h3><p>{t("Before you leave, please tell us why. This feedback is required so the team can keep improving ReviveSpring.", "Avant de partir, dites-nous pourquoi. Ce retour est necessaire pour aider l'equipe a ameliorer ReviveSpring.")}</p><input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder={t("Short reason for leaving", "Raison breve du depart")} /><textarea value={deleteFeedback} onChange={event => setDeleteFeedback(event.target.value)} placeholder={t("What made you decide to delete your account?", "Qu'est-ce qui vous a pousse a supprimer votre compte ?")} rows={5} />{deleteError && <p className="form-error">{deleteError}</p>}<button className="button danger full" disabled={!deleteReason.trim() || !deleteFeedback.trim() || deleting} onClick={deleteAccount}>{deleting ? t("Deleting account...", "Suppression du compte...") : t("Delete my account", "Supprimer mon compte")}</button></Panel><Panel><h3>{t("Faith Milestones", "Etapes de foi")}</h3><p>{t("View the badges you've earned on your journey.", "Consultez les badges que vous avez obtenus sur votre parcours.")}</p><button className="button secondary full" onClick={() => setShowMilestones(true)}>{t("View My Badges", "Voir mes badges")}</button></Panel><Panel><h3>{t("Appearance", "Apparence")}</h3><p>{t(`${fontFamily} · ${Math.round(fontScale * 100)}% text size`, `${fontFamily} · ${Math.round(fontScale * 100)}% taille du texte`)}</p><button className="button secondary full" onClick={() => setShowAppearance(true)}>{t("Change Font & Size", "Changer la police et la taille")}</button></Panel></div>{showMilestones && <MilestonesModal token={token} language={language} onClose={() => setShowMilestones(false)} />}{showAppearance && <AppearanceModal fontFamily={fontFamily} fontScale={fontScale} saving={savingSettings} onSelectFont={(value) => saveProfile({ fontFamily: value })} onSelectScale={(value) => saveProfile({ fontScale: value })} onClose={() => setShowAppearance(false)} language={language} />}{showPassword && <PasswordModal token={token} language={language} hasPassword={!!user.hasPassword} onDone={() => setShowPassword(false)} />}</>;
 }
 
 function MilestonesModal({ token, language, onClose }: { token: string; language: Lang; onClose: () => void }) {
@@ -3572,7 +3716,7 @@ function AdminControlCenter({ token }: { token: string }) {
     {section === "subscriptions" && <div className="admin-section-grid">
       <Panel><SectionTitle title="Subscription management" subtitle="Change a user's plan manually." /><AdminUserList users={users} actions={(user) => <select value={user.subscriptionStatus || "free"} onChange={e => updateUser(user.id, "/plan", { plan: e.target.value }, "Plan updated.")}><option value="free">Free</option><option value="standard">Standard</option><option value="premium">Premium</option></select>} /></Panel>
       <AdminModule title="Revenue reports" body="Use settings to store Stripe and RevenueCat links or report notes until payment webhooks are connected." items={[`Stripe: ${settingsMap.stripe_dashboard_url || "Not set"}`, `RevenueCat: ${settingsMap.revenuecat_dashboard_url || "Not set"}`, `Monthly note: ${settingsMap.monthly_revenue_note || "Not set"}`]} />
-      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note", "subscription_currency", "subscription_first_term_months", "subscription_renewal_term_months", "subscription_first_term_discount_percent", "subscription_standard_price_usd", "subscription_premium_price_usd", "subscription_google_play_standard_product_id", "subscription_google_play_premium_product_id", "ads_enabled", "ads_banner_enabled", "ai_ad_unlock_enabled", "ai_ad_daily_limit", "ad_banner_title_en", "ad_banner_title_fr", "ad_banner_body_en", "ad_banner_body_fr", "ad_banner_cta_en", "ad_banner_cta_fr", "ai_ad_title_en", "ai_ad_title_fr", "ai_ad_body_en", "ai_ad_body_fr", "ai_ad_cta_en", "ai_ad_cta_fr"]} settings={settingsMap} onSave={saveSetting} /></Panel>
+      <Panel><SectionTitle title="Payment links and notes" subtitle="Keep non-technical references in the dashboard." /><QuickSettings keys={["stripe_dashboard_url", "revenuecat_dashboard_url", "monthly_revenue_note", "yearly_revenue_note", "subscription_currency", "subscription_first_term_months", "subscription_renewal_term_months", "subscription_first_term_discount_percent", "subscription_standard_price_usd", "subscription_premium_price_usd", "subscription_google_play_standard_product_id", "subscription_google_play_premium_product_id", "trial_days", "standard_ai_messages_per_month"]} settings={settingsMap} onSave={saveSetting} /></Panel>
     </div>}
 
     {section === "communication" && <div className="admin-section-grid">
@@ -3703,6 +3847,40 @@ function prayerExperience(item: PrayerItem): PrayerExperience {
     ],
   };
 }
+// ─── Mood videos ───────────────────────────────────────────────────────────
+// A video for a mood plays at the bottom of that mood's prayer screen.
+// To add another, drop the file into the backend at
+//   public/media/wellness/<filename>
+// and add one line here. Nothing else needs to change.
+const MOOD_VIDEOS: Record<string, string> = {
+  "Anxious": "anxiety.mp4",
+};
+
+function moodVideoUrl(mood?: string): string | null {
+  if (!mood) return null;
+  const file = MOOD_VIDEOS[mood];
+  return file ? `${MEDIA_BASE_URL}/media/wellness/${file}` : null;
+}
+
+function MoodVideoCard({ mood }: { mood?: string }) {
+  const url = moodVideoUrl(mood);
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) return null;   // no video for this mood, or it won't load
+  return <PrayerResourceSection icon="05" title="Watch and listen">
+    <div className="mood-video-card">
+      <video
+        className="mood-video"
+        src={url}
+        controls
+        playsInline
+        preload="metadata"
+        onError={() => setFailed(true)}
+      />
+      <p className="mood-video-note">Sit with this for a few minutes. There is no rush.</p>
+    </div>
+  </PrayerResourceSection>;
+}
+
 function MoodModal({ mood, token, refresh, close }: { mood: string; token:string; refresh:()=>Promise<void>; close: () => void }) { const item=moodPrayerItem(mood); return <TimedPrayerModal item={item} token={token} refresh={refresh} close={close}/>; }
 function ClosePrayerIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>; }
 function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:string;refresh:()=>Promise<void>;close:()=>void}){
@@ -3722,7 +3900,7 @@ function TimedPrayerModal({item,token,refresh,close}:{item:PrayerItem;token:stri
     },required*1000);
     return()=>window.clearTimeout(timer);
   },[item,recorded,refresh,token]);
-  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer prayer-experience-modal" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>A complete prayer experience for this season.</h2><PrayerResourceSection icon="01" title="Relevant Scriptures">{experience.scriptures.map(scripture => <blockquote key={scripture.reference}><q>{scripture.verse}</q><b>{scripture.reference}</b></blockquote>)}</PrayerResourceSection><PrayerResourceSection icon="02" title="Faith Confessions"><div className="prayer-resource-list">{experience.confessions.map(confession => <p key={confession}>{confession}</p>)}</div></PrayerResourceSection><PrayerResourceSection icon="03" title="Guided Prayer"><p className="guided-prayer-copy">{experience.guidedPrayer}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}</PrayerResourceSection><PrayerResourceSection icon="04" title="Words of Encouragement and Hope"><div className="prayer-resource-list hope">{experience.encouragement.map(message => <p key={message}>{message}</p>)}</div></PrayerResourceSection><p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"This prayer will be recorded once after a quiet moment here."}</p></section></div>
+  return <div className="modal-backdrop" onClick={close}><section className="mood-modal hovering-prayer prayer-experience-modal" onClick={e=>e.stopPropagation()}><button className="modal-close prayer-close" onClick={close} aria-label="Close prayer"><ClosePrayerIcon /></button><span className={`tile-icon ${item.tone}`}>{item.icon}</span><p className="eyebrow">{item.title}</p><h2>A complete prayer experience for this season.</h2><PrayerResourceSection icon="01" title="Relevant Scriptures">{experience.scriptures.map(scripture => <blockquote key={scripture.reference}><q>{scripture.verse}</q><b>{scripture.reference}</b></blockquote>)}</PrayerResourceSection><PrayerResourceSection icon="02" title="Faith Confessions"><div className="prayer-resource-list">{experience.confessions.map(confession => <p key={confession}>{confession}</p>)}</div></PrayerResourceSection><PrayerResourceSection icon="03" title="Guided Prayer"><p className="guided-prayer-copy">{experience.guidedPrayer}</p>{item.action&&<p className="action-step"><b>Faith step</b>{item.action}</p>}</PrayerResourceSection><PrayerResourceSection icon="04" title="Words of Encouragement and Hope"><div className="prayer-resource-list hope">{experience.encouragement.map(message => <p key={message}>{message}</p>)}</div></PrayerResourceSection><MoodVideoCard mood={item.mood} /><p className="timer-copy">{recorded?"Prayer recorded once for this unique prayer.":"This prayer will be recorded once after a quiet moment here."}</p></section></div>
 }
 function PrayerResourceSection({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return <section className="prayer-resource-section"><header><span>{icon}</span><h3>{title}</h3></header>{children}</section>;

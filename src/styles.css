@@ -221,3 +221,283 @@
 .intro-video-fail{color:rgba(255,255,255,.6);font-size:.9rem;border:none;width:auto;height:auto;animation:none}
 .intro-video-skip{background:none;border:none;color:rgba(255,255,255,.7);font-size:.95rem;cursor:pointer;padding:8px 16px}
 .verse-moment-detail{opacity:.6;font-size:.7rem;margin-top:4px}
+
+/* ─── Cookie consent ─────────────────────────────────────────────────── */
+.cookie-banner{position:fixed;left:16px;right:16px;bottom:16px;z-index:9000;background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);padding:20px 22px;display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap;max-width:960px;margin:0 auto}
+.cookie-banner-text{flex:1 1 340px}
+.cookie-banner-text b{display:block;margin-bottom:4px;color:var(--emerald)}
+.cookie-banner-text p{margin:0;font-size:.85rem;line-height:1.5;color:var(--muted)}
+.cookie-banner-actions{display:flex;gap:8px;flex-wrap:wrap}
+.cookie-banner-actions .button{padding:10px 16px;font-size:.85rem}
+.button.ghost{background:none;border:1px solid rgba(0,0,0,.15);color:var(--muted)}
+
+.cookie-modal-backdrop{position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:20px}
+.cookie-modal{background:#fff;border-radius:24px;padding:28px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.cookie-modal h2{margin:0 0 8px;color:var(--emerald)}
+.cookie-modal-intro{margin:0 0 20px;font-size:.88rem;color:var(--muted);line-height:1.5}
+.cookie-row{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;padding:16px 0;border-top:1px solid rgba(0,0,0,.07)}
+.cookie-row b{display:block;margin-bottom:3px;font-size:.95rem}
+.cookie-row p{margin:0;font-size:.8rem;color:var(--muted);line-height:1.45}
+.cookie-row input[type=checkbox]{width:20px;height:20px;flex-shrink:0;margin-top:2px;cursor:pointer}
+.cookie-row-locked{opacity:.75}
+.cookie-always-on{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--leaf);white-space:nowrap;margin-top:3px}
+.cookie-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;flex-wrap:wrap}
+@media(max-width:560px){.cookie-banner{flex-direction:column;align-items:stretch}.cookie-banner-actions{justify-content:stretch}.cookie-banner-actions .button{flex:1}}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOSSY LAYER
+   Applied on top of the existing design — same layout, same palette.
+   The recipe, used consistently:
+     1. gradient body      → the surface reads as curved glass, not flat
+     2. inset top hairline → the specular highlight (this is what sells it)
+     3. soft cast shadow   → it floats
+     4. sheen sweep        → light travels across it on hover
+   To remove the gloss entirely, delete this block. Nothing above depends on it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --gloss-face:linear-gradient(180deg,rgba(255,255,255,.97) 0%,rgba(255,255,255,.80) 46%,rgba(255,255,255,.93) 100%);
+  --gloss-edge:1px solid rgba(255,255,255,.9);
+  --gloss-shadow:0 1px 0 rgba(255,255,255,.95) inset,0 -14px 26px -18px rgba(14,75,62,.14) inset,0 12px 28px -12px rgba(14,75,62,.16),0 2px 6px -2px rgba(14,75,62,.07);
+  --gloss-shadow-hover:0 1px 0 rgba(255,255,255,1) inset,0 -14px 26px -18px rgba(14,75,62,.16) inset,0 18px 36px -12px rgba(14,75,62,.24),0 2px 8px -2px rgba(14,75,62,.09);
+}
+
+/* the page itself gets light sources, so glass has something to catch */
+body{
+  background:
+    radial-gradient(120% 90% at 6% -12%, rgba(168,214,114,.20), transparent 55%),
+    radial-gradient(100% 80% at 100% -4%, rgba(91,155,213,.13), transparent 55%),
+    linear-gradient(180deg,#fbfdfc 0%,#f3f8f6 45%,#eef4f1 100%);
+  background-attachment:fixed;
+}
+
+/* ── shared gloss surface ── */
+.panel,
+.stat,
+.prayer-tile,
+.goal-row,
+.mood-grid button,
+.story-grid article,
+.language-option,
+.option-grid button,
+.mood-modal,
+.reminder-card,
+.builder-card,
+.commit-card{
+  position:relative;
+  background:var(--gloss-face)!important;
+  backdrop-filter:blur(12px) saturate(150%);
+  -webkit-backdrop-filter:blur(12px) saturate(150%);
+  border:var(--gloss-edge)!important;
+  box-shadow:var(--gloss-shadow);
+  overflow:hidden;
+  transition:transform .2s ease,box-shadow .28s ease;
+}
+
+/* the specular highlight across the top of every glass surface */
+.panel::before,
+.stat::before,
+.prayer-tile::before,
+.goal-row::before,
+.mood-grid button::before,
+.story-grid article::before,
+.language-option::before,
+.option-grid button::before,
+.mood-modal::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:42%;
+  background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,0));
+  pointer-events:none;z-index:0;
+}
+/* keep content above the highlight */
+.panel>*,.stat>*,.prayer-tile>*,.goal-row>*,.mood-grid button>*,
+.story-grid article>*,.language-option>*,.option-grid button>*,.mood-modal>*{
+  position:relative;z-index:1;
+}
+
+/* lift + brighten on hover */
+.stat:hover,.prayer-tile:hover,.mood-grid button:hover,
+.language-option:hover,.option-grid button:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--gloss-shadow-hover);
+}
+
+/* the sheen sweep */
+.panel::after,
+.stat::after,
+.prayer-tile::after,
+.mood-grid button::after{
+  content:"";position:absolute;top:-60%;left:-70%;
+  width:55%;height:220%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
+  transform:rotate(18deg);
+  transition:left .75s cubic-bezier(.22,.61,.36,1);
+  pointer-events:none;z-index:2;
+}
+.panel:hover::after,.stat:hover::after,.prayer-tile:hover::after,.mood-grid button:hover::after{left:130%}
+
+/* ── the emerald verse card: dark glass, not white ── */
+.verse-card{
+  position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#2E6B5B 0%,var(--emerald) 55%,#0a3a30 100%)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset,0 -12px 24px -16px rgba(0,0,0,.55) inset,0 16px 30px -14px rgba(14,75,62,.5);
+}
+.verse-card::before{
+  content:"";position:absolute;left:3%;right:3%;top:2px;height:40%;
+  border-radius:8px;
+  background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0));
+  pointer-events:none;
+}
+.verse-card>*{position:relative;z-index:1}
+
+/* ── buttons: domed glass ── */
+.button{position:relative;overflow:hidden}
+.button::before{
+  content:"";position:absolute;left:3%;right:3%;top:1px;height:44%;
+  border-radius:5px;
+  background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0));
+  pointer-events:none;
+}
+.button::after{
+  content:"";position:absolute;top:-60%;left:-60%;width:45%;height:220%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+  transform:rotate(18deg);
+  transition:left .8s cubic-bezier(.22,.61,.36,1);
+  pointer-events:none;
+}
+.button:hover::after{left:130%}
+.button>*{position:relative;z-index:1}
+
+.button.primary{
+  background:linear-gradient(180deg,#2E6B5B 0%,var(--emerald) 55%,#0a3a30 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.32) inset,0 -8px 16px -12px rgba(0,0,0,.55) inset,0 10px 20px -8px rgba(14,75,62,.45);
+}
+.button.primary:hover{
+  background:linear-gradient(180deg,#33755f 0%,#0c4437 55%,#08322a 100%);
+  transform:translateY(-2px);
+  box-shadow:0 1px 0 rgba(255,255,255,.34) inset,0 -8px 16px -12px rgba(0,0,0,.55) inset,0 14px 26px -8px rgba(14,75,62,.5);
+}
+.button.secondary,.button.ghost{
+  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(235,244,240,.9));
+  color:var(--emerald);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 6px 14px -8px rgba(14,75,62,.28);
+}
+.button.secondary:hover,.button.ghost:hover{transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 10px 20px -8px rgba(14,75,62,.34)}
+.button.danger{
+  background:linear-gradient(180deg,#fff6f4,#fbe4df);
+  color:var(--coral);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 6px 14px -8px rgba(184,91,72,.3);
+}
+
+/* ── icon chips: domed beads of glass ── */
+.tile-icon,.language-icon,.icon-button,.modal-close{
+  position:relative;overflow:hidden;
+  box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 6px 12px -6px rgba(14,75,62,.3);
+}
+.tile-icon::before,.language-icon::before,.icon-button::before,.modal-close::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:52%;
+  background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0));
+  pointer-events:none;
+}
+.tile-icon.emerald{background:linear-gradient(180deg,#f0f7f4,#dceae5)}
+.tile-icon.lime{background:linear-gradient(180deg,#f6fbee,#e6f2d7)}
+.tile-icon.green{background:linear-gradient(180deg,#f2f9f1,#dff0dd)}
+.tile-icon.coral{background:linear-gradient(180deg,#fdf4f2,#f8e2dc)}
+
+/* ── sidebar + nav ── */
+.sidebar{
+  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(243,248,246,.75));
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+  border-right:1px solid rgba(255,255,255,.85);
+  box-shadow:1px 0 0 rgba(255,255,255,.6) inset;
+}
+.nav-item{transition:.22s;position:relative;overflow:hidden}
+.nav-item.active{
+  background:linear-gradient(180deg,rgba(168,214,114,.5),rgba(168,214,114,.18));
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 4px 10px -5px rgba(14,75,62,.3);
+}
+.nav-item:hover:not(.active){background:rgba(255,255,255,.55)}
+
+.app-header{
+  background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.72));
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+  border-bottom:1px solid rgba(255,255,255,.85);
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 6px 18px -12px rgba(14,75,62,.2);
+}
+
+/* mobile bottom nav → floating glass dock */
+.mobile-nav{
+  background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(255,255,255,.76));
+  backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 -14px 30px -16px rgba(14,75,62,.3);
+}
+
+/* ── chat bubbles ── */
+.message.assistant{
+  background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(240,247,244,.9));
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 4px 10px -6px rgba(14,75,62,.2);
+}
+.message.user{
+  background:linear-gradient(180deg,#2E6B5B,var(--emerald));
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 6px 14px -8px rgba(14,75,62,.45);
+}
+.suggestions button{
+  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(238,246,243,.9));
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 4px 10px -6px rgba(14,75,62,.25);
+  transition:transform .18s;
+}
+.suggestions button:hover{transform:translateY(-1px)}
+
+/* ── segmented control ── */
+.segmented{
+  background:linear-gradient(180deg,rgba(240,246,243,.9),rgba(255,255,255,.7));
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:inset 0 2px 6px rgba(14,75,62,.09);
+}
+.segmented button.active{
+  background:linear-gradient(180deg,#2E6B5B,var(--emerald));
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset,0 4px 10px -5px rgba(14,75,62,.45);
+}
+
+/* ── inputs: recessed glass ── */
+.field input,input,textarea,select{
+  background:linear-gradient(180deg,rgba(250,253,252,.95),rgba(255,255,255,.98));
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:inset 0 2px 5px rgba(14,75,62,.07),0 1px 0 rgba(255,255,255,.9);
+}
+.field input:focus,input:focus,textarea:focus,select:focus{
+  box-shadow:inset 0 2px 5px rgba(14,75,62,.07),0 0 0 3px rgba(63,143,72,.16);
+  border-color:rgba(63,143,72,.5);
+}
+
+/* ── score ring gets a glassy dome ── */
+.score-ring:after{
+  background:linear-gradient(180deg,#ffffff,#f2f8f5);
+  box-shadow:0 1px 0 rgba(255,255,255,1) inset,0 4px 10px -6px rgba(14,75,62,.25);
+}
+
+/* ── modals float on glass ── */
+.modal-backdrop{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+
+/* honour reduced-motion: keep the gloss, drop the movement */
+@media(prefers-reduced-motion:reduce){
+  .panel::after,.stat::after,.prayer-tile::after,.mood-grid button::after,.button::after{display:none}
+  .stat:hover,.prayer-tile:hover,.mood-grid button:hover,.button:hover,
+  .language-option:hover,.option-grid button:hover{transform:none}
+}
+
+/* ── Mood video card (bottom of a mood's prayer screen) ── */
+.mood-video-card{display:grid;gap:10px}
+.mood-video{
+  width:100%;display:block;border-radius:14px;background:#000;
+  aspect-ratio:16/9;object-fit:cover;
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 12px 26px -12px rgba(14,75,62,.4);
+}
+.mood-video-note{font-size:.8rem;color:var(--muted);font-style:italic}
