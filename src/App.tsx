@@ -1903,7 +1903,198 @@ function MainApp({ user, token, signOut, updateUser, setLanguage, language }: { 
     {/* AI has moved out of the nav (Bible took its place) — it now lives as a
         floating button above the dock, so it's still one tap away. */}
     {tab !== "ai" && <button className="ai-fab" onClick={() => setTab("ai")} aria-label={tr(language, "Ask AI Companion", "Demander a l assistant IA")} title={tr(language, "Ask AI Companion", "Demander a l assistant IA")}><UiIcon name="ai" size={22} /></button>}
-    <nav className="mobile-nav">{navItems.map(item => <NavButton item={item} active={tab === item.id} onClick={() => setTab(item.id)} key={item.id} />)}</nav></div>;
+    <CurvedNav items={navItems} activeId={tab} onSelect={setTab} /></div>;
+}
+
+
+// ─── Curved navigation ─────────────────────────────────────────────────────
+// The bar's top edge is a live SVG path, redrawn every frame. It bulges upward
+// into a circular cradle concentric with the raised active disc, so the white
+// wraps the icon with an even halo — by construction, not by eyeballing. Two
+// fillets meet the flat bar tangentially, so there are no corners anywhere.
+//
+// The entrance is staged so nothing snaps:
+//   1. the bar rises with a perfectly FLAT top
+//   2. the icons pop in, staggered, ALL of them inactive
+//   3. only then does the active icon lift, as the cradle swells to meet it
+
+const NAV_BAR_H  = 68;
+const NAV_DISC_R = 22;
+const NAV_GAP    = 7;
+const NAV_R      = NAV_DISC_R + NAV_GAP;          // the cradle's radius
+const NAV_ALPHA  = 58 * Math.PI / 180;            // how much of the circle it uses
+const NAV_FILLET = 18;
+const NAV_CORNER = 14;
+const NAV_LIFT   = 28;
+const NAV_HEAD   = 40;                            // headroom above the bar
+
+/** A real cubic-bezier solver, so the bar moves on the same curves the CSS uses. */
+function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
+  const A = (a: number, b: number) => 1 - 3 * b + 3 * a;
+  const B = (a: number, b: number) => 3 * b - 6 * a;
+  const C = (a: number) => 3 * a;
+  const calc = (t: number, a: number, b: number) => ((A(a, b) * t + B(a, b)) * t + C(a)) * t;
+  const slope = (t: number, a: number, b: number) => 3 * A(a, b) * t * t + 2 * B(a, b) * t + C(a);
+  return (x: number) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 6; i++) {
+      const s = slope(t, x1, x2);
+      if (s === 0) break;
+      t -= (calc(t, x1, x2) - x) / s;
+    }
+    return calc(t, y1, y2);
+  };
+}
+const easeInOutCubic = cubicBezier(.65, .05, .36, 1);   // the bar's glide
+const easeOutBack    = cubicBezier(.34, 1.4, .64, 1);   // the cradle's swell
+
+function CurvedNav({ items, activeId, onSelect }: {
+  items: { id: AppTab; label: string; icon: React.ReactNode }[];
+  activeId: AppTab;
+  onSelect: (id: AppTab) => void;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const stateRef = useRef({ x: 0, p: 0 });        // cradle centre-x, and how grown it is
+  const [width, setWidth] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  const H = NAV_BAR_H + NAV_HEAD;
+  const BAR_TOP = NAV_HEAD;
+  const activeIndex = Math.max(0, items.findIndex(i => i.id === activeId));
+
+  // Pad the ends so the cradle can still reach fully beneath the OUTERMOST
+  // icons. Without this the disc drifts off the white — the exact bug the
+  // first attempt had.
+  const pad = NAV_R * Math.sin(NAV_ALPHA) + NAV_FILLET + NAV_CORNER;
+  const centreOf = (i: number) => {
+    if (!width || items.length < 2) return width / 2;
+    return pad + ((width - pad * 2) / (items.length - 1)) * i;
+  };
+
+  const buildPath = (cx: number, p: number) => {
+    const t = BAR_TOP, W = width, r = NAV_CORNER;
+    if (!W) return "";
+    const restY = BAR_TOP + NAV_BAR_H / 2 - NAV_LIFT;
+    const flatY = t + NAV_R;
+    const cy = flatY + (restY - flatY) * p;
+
+    const sinA = Math.sin(NAV_ALPHA), cosA = Math.cos(NAV_ALPHA);
+    const Lx = cx - NAV_R * sinA, Ly = cy - NAV_R * cosA;
+    const Rx = cx + NAV_R * sinA;
+    const k = NAV_FILLET * .62;
+
+    let top: string;
+    if (Ly >= t - 0.4) {
+      top = `L ${W - r} ${t}`;                     // dead flat — no cradle yet
+    } else {
+      const L0 = Lx - NAV_FILLET, R0 = Rx + NAV_FILLET;
+      top = [
+        `L ${L0} ${t}`,
+        `C ${L0 + NAV_FILLET * .6} ${t}, ${Lx - k * cosA} ${Ly + k * sinA}, ${Lx} ${Ly}`,
+        `A ${NAV_R} ${NAV_R} 0 0 1 ${Rx} ${Ly}`,   // the cradle: a true circular arc
+        `C ${Rx + k * cosA} ${Ly + k * sinA}, ${R0 - NAV_FILLET * .6} ${t}, ${R0} ${t}`,
+        `L ${W - r} ${t}`,
+      ].join(" ");
+    }
+
+    return [
+      `M ${r} ${t}`, top,
+      `Q ${W} ${t} ${W} ${t + r}`,
+      `L ${W} ${H - r}`,
+      `Q ${W} ${H} ${W - r} ${H}`,
+      `L ${r} ${H}`,
+      `Q 0 ${H} 0 ${H - r}`,
+      `L 0 ${t + r}`,
+      `Q 0 ${t} ${r} ${t}`,
+      "Z",
+    ].join(" ");
+  };
+
+  const draw = () => {
+    if (pathRef.current) pathRef.current.setAttribute("d", buildPath(stateRef.current.x, stateRef.current.p));
+  };
+
+  const animate = (toX: number, toP: number, ms: number, ease: (n: number) => number) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const fromX = stateRef.current.x, fromP = stateRef.current.p;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      const e = ease(t);
+      stateRef.current = { x: fromX + (toX - fromX) * e, p: fromP + (toP - fromP) * e };
+      draw();
+      if (t < 1) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+  };
+
+  useEffect(() => {
+    const measure = () => setWidth(wrapRef.current?.getBoundingClientRect().width ?? 0);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  // The staged entrance. The bar arrives FLAT; the cradle only swells once the
+  // icons have finished landing, so there is nothing to snap between.
+  useEffect(() => {
+    if (!width) return;
+    stateRef.current = { x: centreOf(activeIndex), p: 0 };
+    draw();
+    const t = window.setTimeout(() => {
+      setReady(true);
+      animate(stateRef.current.x, 1, 640, easeOutBack);
+    }, 1250);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width]);
+
+  // Glide sideways when the tab changes.
+  useEffect(() => {
+    if (!width || !ready) return;
+    animate(centreOf(activeIndex), 1, 620, easeInOutCubic);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, width, ready]);
+
+  return <div className={`curved-nav ${ready ? "ready" : "play"}`} ref={wrapRef} style={{ height: H }}>
+    <svg className="curved-nav-svg" viewBox={`0 0 ${width} ${H}`} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="navGlass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity=".99" />
+          <stop offset=".45" stopColor="#fff" stopOpacity=".88" />
+          <stop offset="1" stopColor="#fff" stopOpacity=".96" />
+        </linearGradient>
+        <filter id="navShadow" x="-30%" y="-50%" width="160%" height="220%">
+          <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="#0E4B3E" floodOpacity=".28" />
+        </filter>
+      </defs>
+      <path ref={pathRef} fill="url(#navGlass)" stroke="rgba(255,255,255,.95)" strokeWidth="1" filter="url(#navShadow)" />
+    </svg>
+
+    <div className="curved-nav-items" style={{ height: NAV_BAR_H, paddingLeft: pad - 17, paddingRight: pad - 17 }}>
+      {items.map((item, i) => {
+        const on = ready && item.id === activeId;
+        return <button
+          key={item.id}
+          className={`curved-nav-item ${on ? "on" : ""}`.trim()}
+          style={{ animationDelay: `${0.36 + i * 0.065}s` }}
+          onClick={() => onSelect(item.id)}
+          aria-current={on ? "page" : undefined}
+        >
+          <span className="curved-nav-disc" />
+          <span className="curved-nav-glyph">{item.icon}</span>
+          <span className="curved-nav-label">{item.label}</span>
+        </button>;
+      })}
+    </div>
+  </div>;
 }
 
 function NavButton({ item, active, onClick }: { item: { label: string; icon: React.ReactNode }; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}><span>{item.icon}</span><b>{item.label}</b></button>; }

@@ -663,3 +663,127 @@ select optgroup{
 }
 .goal-note-input::placeholder{color:#9AA8A2;font-style:italic}
 .goal-note-hint{font-size:.74rem;color:var(--muted);font-style:italic}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CURVED NAVIGATION (V3)
+   The white shape is an SVG path drawn in JS. Everything here is the
+   icons, the disc, and the staged entrance that sits on top of it.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root{
+  --nav-idle:#3A5449;                              /* legible, not washed out */
+  --ease-bounce:cubic-bezier(.34,1.56,.64,1);
+  --ease-in-out:cubic-bezier(.65,.05,.36,1);
+  --ease-out-soft:cubic-bezier(.22,.61,.36,1);
+}
+
+.curved-nav{
+  position:fixed;left:12px;right:12px;bottom:12px;
+  z-index:40;
+  transform:translateY(150%);opacity:0;
+  animation:navRise .6s var(--ease-out-soft) forwards;
+}
+@keyframes navRise{
+  from{transform:translateY(150%);opacity:0}
+  to{transform:translateY(0);opacity:1}
+}
+.curved-nav-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+
+.curved-nav-items{
+  position:absolute;left:0;right:0;bottom:0;
+  display:flex;justify-content:space-between;align-items:center;
+}
+
+.curved-nav-item{
+  position:relative;
+  background:none;border:none;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  width:34px;padding:0;
+  font-family:inherit;font-size:.47rem;font-weight:700;
+  color:var(--nav-idle);
+  opacity:0;transform:translateY(24px) scale(.35);
+  transition:
+    transform .5s var(--ease-in-out),
+    color .35s var(--ease-in-out),
+    opacity .4s var(--ease-in-out);
+}
+
+/* stage 2: every icon pops in — all of them INACTIVE, so nothing can snap */
+.curved-nav.play .curved-nav-item{animation:navIconPop .52s var(--ease-bounce) forwards}
+@keyframes navIconPop{
+  from{transform:translateY(24px) scale(.35);opacity:0}
+  to{transform:translateY(0) scale(.92);opacity:.9}
+}
+
+/* stage 3: `.ready` hands over to the state classes. Its resting state is
+   IDENTICAL to the keyframe's end state — that's what removes the glitch. */
+.curved-nav.ready .curved-nav-item{
+  animation:none;opacity:.9;transform:translateY(0) scale(.92);
+}
+
+/* stage 4: only now does the active icon rise into the cradle */
+.curved-nav.ready .curved-nav-item.on{
+  transform:translateY(-28px) scale(1.14);
+  opacity:1;color:var(--emerald);z-index:2;
+  transition:transform .62s var(--ease-bounce),color .4s var(--ease-in-out),opacity .4s var(--ease-in-out);
+}
+
+/* the glossy disc behind the active icon */
+.curved-nav-disc{
+  position:absolute;top:-8px;left:50%;
+  width:44px;height:44px;margin-left:-22px;
+  border-radius:50%;z-index:-1;
+  background:linear-gradient(180deg,#3E8A72 0%,var(--emerald) 58%,#0A3A30 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.35) inset,
+    0 -8px 14px -10px rgba(0,0,0,.6) inset,
+    0 12px 22px -8px rgba(14,75,62,.6);
+  transform:scale(0);opacity:0;
+  transition:transform .62s var(--ease-bounce),opacity .3s var(--ease-in-out);
+}
+.curved-nav-disc::before{                          /* the gloss dome */
+  content:"";position:absolute;left:14%;right:14%;top:4px;height:38%;
+  border-radius:50%;
+  background:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,0));
+}
+.curved-nav.ready .curved-nav-item.on .curved-nav-disc{transform:scale(1);opacity:1}
+
+.curved-nav-glyph{
+  display:grid;place-items:center;position:relative;z-index:1;
+  width:20px;height:20px;
+  transition:transform .4s var(--ease-bounce),color .35s var(--ease-in-out);
+}
+.curved-nav-glyph svg{width:19px;height:19px}
+.curved-nav.ready .curved-nav-item.on .curved-nav-glyph{color:#fff}
+
+.curved-nav-label{
+  white-space:nowrap;
+  transition:opacity .35s var(--ease-in-out),transform .45s var(--ease-in-out);
+}
+/* the active label sits ON the dark disc, so it has to be white */
+.curved-nav.ready .curved-nav-item.on .curved-nav-label{
+  transform:translateY(3px);
+  font-weight:800;
+  color:#fff;
+  text-shadow:0 1px 3px rgba(0,0,0,.35);
+}
+
+/* grow / shrink */
+.curved-nav-item:hover:not(.on) .curved-nav-glyph{transform:scale(1.2) translateY(-2px)}
+.curved-nav-item:hover:not(.on){color:var(--emerald)}
+.curved-nav.ready .curved-nav-item:active{transform:translateY(0) scale(.82)}
+.curved-nav.ready .curved-nav-item.on:active{transform:translateY(-28px) scale(1.05)}
+.curved-nav-item:focus-visible{outline:2px solid var(--leaf);outline-offset:3px;border-radius:10px}
+
+/* the old flat bar is gone */
+.mobile-nav{display:none!important}
+
+/* the AI button rides above the curved bar */
+.ai-fab{bottom:132px}
+@media(min-width:900px){
+  /* on desktop the sidebar handles navigation, so the dock stands down */
+  .curved-nav{display:none}
+  .ai-fab{bottom:28px}
+}
+@media(prefers-reduced-motion:reduce){
+  .curved-nav,.curved-nav-item,.curved-nav-disc{animation:none!important;transition:none!important}
+}
